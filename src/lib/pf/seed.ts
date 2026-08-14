@@ -1,11 +1,12 @@
 import type { DB } from "./types";
 
 const now = new Date();
-const iso = (daysFromNow: number) =>
-  new Date(now.getTime() + daysFromNow * 86400000).toISOString();
+const iso = (daysFromNow: number) => new Date(now.getTime() + daysFromNow * 86400000).toISOString();
 
 export function seedDB(): DB {
   return {
+    schemaVersion: 2,
+    language: "en",
     currentUserId: "u_me",
     users: [
       {
@@ -59,7 +60,10 @@ export function seedDB(): DB {
       // Me <-> Partner
       c("cn5", "u_me", "u_partner", "Partner", true),
       c("cn6", "u_partner", "u_me", "Partner", false),
-      // NOTE: deliberately no connection between Mum/Dad and Partner.
+      // Mum and Dad can see and assign to one another.
+      c("cn7", "u_mum", "u_dad", "Partner", true),
+      c("cn8", "u_dad", "u_mum", "Partner", true),
+      // Deliberately no connection between Mum/Dad and Partner.
     ],
     tasks: [
       t({
@@ -126,8 +130,7 @@ export function seedDB(): DB {
         Deadline: iso(4),
         Priority: 3,
         ExpectedLoad: 2,
-        WhyImportant:
-          "I dislike unresolved money and want loose financial matters closed.",
+        WhyImportant: "I dislike unresolved money and want loose financial matters closed.",
         Status: "Sorted",
         Visibility: "MY CONNECTIONS",
         ReminderPermission: "One reminder",
@@ -186,6 +189,59 @@ export function seedDB(): DB {
       s("st3", "t_paperwork", 3, "Call", false),
       s("st4", "t_paperwork", 4, "Upload document", false),
     ],
+    projects: [],
+    categories: [
+      ...[
+        "Work / Study",
+        "Family",
+        "Household",
+        "Money / Admin",
+        "Health",
+        "Social",
+        "Errands",
+        "Other",
+      ].flatMap((name, index) =>
+        ["u_me", "u_mum", "u_dad", "u_partner"].map((owner) => ({
+          CategoryID: `cat_${owner}_${index}`,
+          OwnerUser: owner,
+          ProjectID: null,
+          Name: name,
+          ArchivedAt: null,
+        })),
+      ),
+    ],
+    assignments: [
+      {
+        AssignmentID: "as_private",
+        TaskID: "t_private",
+        RequesterUser: "u_partner",
+        RecipientUser: "u_me",
+        WhyImportant: "It matters to Partner that I plan it myself.",
+        ExpectedLoad: 4,
+        Deadline: null,
+        ReminderPermission: "None",
+        State: "accepted",
+        LastMessage: "",
+        CreatedAt: iso(-2),
+        UpdatedAt: iso(-2),
+      },
+      {
+        AssignmentID: "as_reimb",
+        TaskID: "t_reimb",
+        RequesterUser: "u_dad",
+        RecipientUser: "u_me",
+        WhyImportant: "I dislike unresolved money and want loose financial matters closed.",
+        ExpectedLoad: 2,
+        Deadline: iso(4),
+        ReminderPermission: "One reminder",
+        State: "received",
+        LastMessage: "",
+        CreatedAt: iso(-1),
+        UpdatedAt: iso(-1),
+      },
+    ],
+    supportRequests: [],
+    notifications: [],
     access: [],
     persimmons: [
       {
@@ -213,13 +269,7 @@ export function seedDB(): DB {
   };
 }
 
-function c(
-  id: string,
-  viewer: string,
-  owner: string,
-  label: string,
-  canAssign: boolean,
-) {
+function c(id: string, viewer: string, owner: string, label: string, canAssign: boolean) {
   return {
     ConnectionID: id,
     OwnerUser: owner,
@@ -232,21 +282,20 @@ function c(
   };
 }
 
-function s(
-  StepID: string,
-  Task: string,
-  StepOrder: number,
-  StepText: string,
-  IsDone: boolean,
-) {
+function s(StepID: string, Task: string, StepOrder: number, StepText: string, IsDone: boolean) {
   return { StepID, Task, StepOrder, StepText, IsDone };
 }
 
-function t(partial: Partial<DB["tasks"][number]> & { TaskID: string; Title: string; OwnerUser: string }) {
+function t(
+  partial: Partial<DB["tasks"][number]> & { TaskID: string; Title: string; OwnerUser: string },
+) {
   return {
     Description: "",
     RequestedByUser: null,
     Category: "Other" as const,
+    CategoryID: null,
+    ProjectID: null,
+    ParentTaskID: null,
     Deadline: null,
     DeadlineBucket: "No deadline" as const,
     Priority: 3,

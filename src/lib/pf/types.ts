@@ -1,9 +1,7 @@
+export type Language = "en" | "zh-HK";
+
 export type Mood =
-  | "Neuna / overwhelmed"
-  | "Teddi / exhausted"
-  | "Elster / focused"
-  | "Goldie / energetic"
-  | "Fine";
+  "Neuna / overwhelmed" | "Teddi / exhausted" | "Elster / focused" | "Goldie / energetic" | "Fine";
 
 export type Category =
   | "Work / Study"
@@ -21,11 +19,11 @@ export type Status =
   | "In Progress"
   | "Blocked"
   | "Waiting for Someone"
+  | "Split into packages"
   | "Done";
 
 export type Visibility = "JUST ME" | "MY CONNECTIONS" | "SELECTED PEOPLE";
 export type DetailLevel = "FULL" | "LOAD ONLY";
-
 export type ReminderPermission = "None" | "One reminder" | "Every 3 days";
 
 export type SupportType =
@@ -56,13 +54,29 @@ export type AssignmentResponse =
   | "✅ Done"
   | "";
 
+export type AssignmentState =
+  "pending" | "received" | "later" | "clarification_needed" | "accepted" | "rejected" | "completed";
+
+export type NotificationType =
+  | "task_assigned"
+  | "assignment_response"
+  | "clarification"
+  | "support_requested"
+  | "support_response"
+  | "mood_check_in"
+  | "task_completed"
+  | "reminder"
+  | "reminder_response"
+  | "appreciation"
+  | "announcement";
+
 export interface User {
   UserID: string;
   Email: string;
   DisplayName: string;
   ProfileImage: string | null;
   CurrentMood: Mood;
-  CurrentLoad: number | null; // self reported, null = use calculated
+  CurrentLoad: number | null;
   HelpNeeded: boolean;
   LastCheckIn: string | null;
 }
@@ -74,7 +88,10 @@ export interface Task {
   OwnerUser: string;
   RequestedByUser: string | null;
   Category: Category | "";
-  Deadline: string | null; // ISO date
+  CategoryID: string | null;
+  ProjectID: string | null;
+  ParentTaskID: string | null;
+  Deadline: string | null;
   DeadlineBucket: "Today" | "Soon" | "Later" | "No deadline" | "Custom";
   Priority: number;
   ExpectedLoad: number;
@@ -99,6 +116,63 @@ export interface TaskStep {
   StepOrder: number;
   StepText: string;
   IsDone: boolean;
+}
+
+export interface Project {
+  ProjectID: string;
+  OwnerUser: string;
+  Name: string;
+  Colour: string;
+  ArchivedAt: string | null;
+}
+
+export interface CategoryRow {
+  CategoryID: string;
+  OwnerUser: string;
+  ProjectID: string | null;
+  Name: string;
+  ArchivedAt: string | null;
+}
+
+export interface AssignmentRequest {
+  AssignmentID: string;
+  TaskID: string;
+  RequesterUser: string;
+  RecipientUser: string;
+  WhyImportant: string;
+  ExpectedLoad: number;
+  Deadline: string | null;
+  ReminderPermission: ReminderPermission;
+  State: AssignmentState;
+  LastMessage: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+export interface SupportRequest {
+  SupportRequestID: string;
+  TaskID: string;
+  RequesterUser: string;
+  HelperUser: string | null;
+  Type: SupportType;
+  Details: string;
+  SuggestedTime: string | null;
+  Status: "open" | "accepted" | "resolved";
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+export interface ActivityNotification {
+  NotificationID: string;
+  ActorUser: string | null;
+  RecipientUser: string;
+  Type: NotificationType;
+  TaskID: string | null;
+  AssignmentID: string | null;
+  SupportRequestID: string | null;
+  Message: string;
+  CreatedAt: string;
+  ReadAt: string | null;
 }
 
 export interface Connection {
@@ -137,6 +211,7 @@ export interface CharacterRow {
   Nickname: string;
   Role: string;
   Image: string | null;
+  DefaultImage?: string | null;
   ShortPrompt: string;
 }
 
@@ -154,13 +229,24 @@ export interface BrainDump {
   DumpID: string;
   User: string;
   Text: string;
+  Kind: "holding" | "converted";
+  ResultTaskIDs: string[];
   CreatedAt: string;
+  UpdatedAt: string;
+  ArchivedAt: string | null;
 }
 
 export interface DB {
+  schemaVersion: 2;
+  language: Language;
   users: User[];
   tasks: Task[];
   steps: TaskStep[];
+  projects: Project[];
+  categories: CategoryRow[];
+  assignments: AssignmentRequest[];
+  supportRequests: SupportRequest[];
+  notifications: ActivityNotification[];
   connections: Connection[];
   access: TaskAccess[];
   persimmons: PersimmonEvent[];
@@ -170,7 +256,6 @@ export interface DB {
   currentUserId: string;
 }
 
-/** What a viewer is actually allowed to receive about a task. */
 export type VisibleTask =
   | {
       redacted: false;

@@ -1,5 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { usePF, balanceOf } from "@/lib/pf/store";
+import { useI18n } from "@/lib/pf/i18n";
+import { BuluInbox } from "./BuluInbox";
+import { CharacterWorkshop } from "./CharacterWorkshop";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -8,16 +12,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const TABS = [
-  { to: "/", label: "Landing Patch", icon: "🛬" },
-  { to: "/sorting", label: "Sorting Line", icon: "🏭" },
-  { to: "/floor", label: "Factory Floor", icon: "📊" },
-  { to: "/harvest", label: "Harvest", icon: "🍊" },
-] as const;
-
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { db, me, setCurrentUser } = usePF();
+  const { db, me, setCurrentUser, setLanguage } = usePF();
+  const { t } = useI18n();
   const balance = balanceOf(db, me.UserID);
+  const tabs = [
+    { to: "/", label: t("Landing Patch", "降落區"), icon: "🛬" },
+    { to: "/sorting", label: t("Sorting Line", "分類線"), icon: "🏭" },
+    { to: "/floor", label: t("Factory Floor", "工廠樓層"), icon: "📊" },
+    { to: "/harvest", label: t("Harvest", "收成"), icon: "🍊" },
+  ] as const;
 
   return (
     <div className="paper min-h-screen bg-background">
@@ -34,10 +38,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="rounded-full bg-secondary px-3 py-1.5 text-sm font-bold text-secondary-foreground">
                 🍊 {balance}
               </span>
+              <BuluInbox />
+              <CharacterWorkshop />
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Viewing as</span>
+            <span className="text-xs text-muted-foreground">
+              {t("Demo: view as", "示範：切換用戶")}
+            </span>
             <Select value={me.UserID} onValueChange={setCurrentUser}>
               <SelectTrigger className="h-9 flex-1 rounded-xl bg-card text-sm">
                 <SelectValue />
@@ -50,6 +58,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 rounded-xl px-2 text-xs"
+              onClick={() => setLanguage(db.language === "en" ? "zh-HK" : "en")}
+            >
+              {db.language === "en" ? "繁中" : "EN"}
+            </Button>
           </div>
         </header>
 
@@ -57,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
           <ul className="grid grid-cols-4">
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <li key={tab.to}>
                 <Link
                   to={tab.to}
