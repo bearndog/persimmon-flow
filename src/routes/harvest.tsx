@@ -29,7 +29,8 @@ export const Route = createFileRoute("/harvest")({
 });
 
 function Harvest() {
-  const { db, me, myTasks, sendPersimmon, peopleIShareWith, buluPing } = usePF();
+  const { db, me, myTasks, sendPersimmon, peopleIShareWith, buluPing, reset } =
+    usePF();
   const balance = balanceOf(db, me.UserID);
   const done = myTasks()
     .filter((t) => t.Status === "Done")
@@ -155,6 +156,17 @@ function Harvest() {
           </li>
         ))}
       </ul>
+
+      <Button
+        variant="ghost"
+        className="mt-6 h-12 w-full rounded-2xl text-xs text-muted-foreground"
+        onClick={() => {
+          reset();
+          toast("Demo factory reset.");
+        }}
+      >
+        Reset demo data
+      </Button>
     </AppShell>
   );
 }
