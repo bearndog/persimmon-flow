@@ -5,7 +5,7 @@ import { AppShell } from "@/components/pf/AppShell";
 import { CharacterSays } from "@/components/pf/Character";
 import { Chip, LoadDot, Scale } from "@/components/pf/Bits";
 import { TaskCard } from "@/components/pf/TaskCard";
-import { usePF, calculatedLoad, progressOf } from "@/lib/pf/store";
+import { usePF, calculatedLoad, viewTask } from "@/lib/pf/store";
 import type { AssignmentResponse, Mood, Task } from "@/lib/pf/types";
 import { Button } from "@/components/ui/button";
 
@@ -234,12 +234,10 @@ function PeopleView() {
           <ul className="mt-3 space-y-2">
             {db.tasks
               .filter((t) => t.OwnerUser === p.user.UserID)
-              .map((t) => {
-                const v = visible(t, p.user.UserID);
-                return v;
-              })
-              .filter(Boolean)
-              .slice(0, 6)}
+              .slice(0, 8)
+              .map((t) => (
+                <VisibleRow key={t.TaskID} task={t} />
+              ))}
           </ul>
         </div>
       ))}
@@ -250,17 +248,11 @@ function PeopleView() {
       ) : null}
     </div>
   );
-
-  function visible(task: Task, _ownerId: string) {
-    const { db: database } = { db };
-    void database;
-    return <VisibleRow key={task.TaskID} task={task} />;
-  }
 }
 
 function VisibleRow({ task }: { task: Task }) {
   const { db } = usePF();
-  const v = viewFor(db, task);
+  const v = viewTask(db, task, db.currentUserId);
   if (!v) return null;
   return (
     <li className="rounded-2xl bg-secondary/50 p-3 text-sm">
@@ -285,16 +277,6 @@ function VisibleRow({ task }: { task: Task }) {
       )}
     </li>
   );
-}
-
-function viewFor(db: ReturnType<typeof usePF>["db"], task: Task) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return viewTaskSafe(db, task);
-}
-
-import { viewTask } from "@/lib/pf/store";
-function viewTaskSafe(db: ReturnType<typeof usePF>["db"], task: Task) {
-  return viewTask(db, task, db.currentUserId);
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
@@ -375,5 +357,3 @@ function moodConfig(mood: Mood) {
       };
   }
 }
-
-export { progressOf };

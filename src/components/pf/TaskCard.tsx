@@ -423,7 +423,7 @@ function AccessToggle({
 }: {
   taskId: string;
   viewerId: string;
-  current?: DetailLevel;
+  current?: DetailLevel | undefined;
 }) {
   const { db } = usePF();
   // mutate through a tiny local helper on the db object via context updateTask is
