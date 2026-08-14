@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as FloorRouteImport } from './routes/floor'
+import { Route as HarvestRouteImport } from './routes/harvest'
+import { Route as SortingRouteImport } from './routes/sorting'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FloorRoute = FloorRouteImport.update({
+  id: '/floor',
+  path: '/floor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HarvestRoute = HarvestRouteImport.update({
+  id: '/harvest',
+  path: '/harvest',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SortingRoute = SortingRouteImport.update({
+  id: '/sorting',
+  path: '/sorting',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/floor': typeof FloorRoute
+  '/harvest': typeof HarvestRoute
+  '/sorting': typeof SortingRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/floor': typeof FloorRoute
+  '/harvest': typeof HarvestRoute
+  '/sorting': typeof SortingRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/floor': typeof FloorRoute
+  '/harvest': typeof HarvestRoute
+  '/sorting': typeof SortingRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/floor' | '/harvest' | '/sorting'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/floor' | '/harvest' | '/sorting'
+  id: '__root__' | '/' | '/floor' | '/harvest' | '/sorting'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FloorRoute: typeof FloorRoute
+  HarvestRoute: typeof HarvestRoute
+  SortingRoute: typeof SortingRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/floor': {
+      id: '/floor'
+      path: '/floor'
+      fullPath: '/floor'
+      preLoaderRoute: typeof FloorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/harvest': {
+      id: '/harvest'
+      path: '/harvest'
+      fullPath: '/harvest'
+      preLoaderRoute: typeof HarvestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sorting': {
+      id: '/sorting'
+      path: '/sorting'
+      fullPath: '/sorting'
+      preLoaderRoute: typeof SortingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FloorRoute: FloorRoute,
+  HarvestRoute: HarvestRoute,
+  SortingRoute: SortingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
