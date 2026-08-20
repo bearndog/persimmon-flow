@@ -1,11 +1,13 @@
 import type { DB } from "./types";
 
 const now = new Date();
-const iso = (daysFromNow: number) =>
-  new Date(now.getTime() + daysFromNow * 86400000).toISOString();
+const iso = (daysFromNow: number) => new Date(now.getTime() + daysFromNow * 86400000).toISOString();
 
 export function seedDB(): DB {
   return {
+    schemaVersion: 3,
+    language: "en",
+    layoutMode: "character",
     currentUserId: "u_me",
     users: [
       {
@@ -52,14 +54,17 @@ export function seedDB(): DB {
     connections: [
       // Me <-> Mum
       c("cn1", "u_me", "u_mum", "Mum", true),
-      c("cn2", "u_mum", "u_me", "Son", false),
+      c("cn2", "u_mum", "u_me", "Son", true),
       // Me <-> Dad
       c("cn3", "u_me", "u_dad", "Dad", true),
-      c("cn4", "u_dad", "u_me", "Son", false),
+      c("cn4", "u_dad", "u_me", "Son", true),
       // Me <-> Partner
       c("cn5", "u_me", "u_partner", "Partner", true),
-      c("cn6", "u_partner", "u_me", "Partner", false),
-      // NOTE: deliberately no connection between Mum/Dad and Partner.
+      c("cn6", "u_partner", "u_me", "Partner", true),
+      // Mum and Dad can see and assign to one another.
+      c("cn7", "u_mum", "u_dad", "Partner", true),
+      c("cn8", "u_dad", "u_mum", "Partner", true),
+      // Deliberately no connection between Mum/Dad and Partner.
     ],
     tasks: [
       t({
@@ -126,8 +131,7 @@ export function seedDB(): DB {
         Deadline: iso(4),
         Priority: 3,
         ExpectedLoad: 2,
-        WhyImportant:
-          "I dislike unresolved money and want loose financial matters closed.",
+        WhyImportant: "I dislike unresolved money and want loose financial matters closed.",
         Status: "Sorted",
         Visibility: "MY CONNECTIONS",
         ReminderPermission: "One reminder",
@@ -186,6 +190,59 @@ export function seedDB(): DB {
       s("st3", "t_paperwork", 3, "Call", false),
       s("st4", "t_paperwork", 4, "Upload document", false),
     ],
+    projects: [],
+    categories: [
+      ...[
+        "Work / Study",
+        "Family",
+        "Household",
+        "Money / Admin",
+        "Health",
+        "Social",
+        "Errands",
+        "Other",
+      ].flatMap((name, index) =>
+        ["u_me", "u_mum", "u_dad", "u_partner"].map((owner) => ({
+          CategoryID: `cat_${owner}_${index}`,
+          OwnerUser: owner,
+          ProjectID: null,
+          Name: name,
+          ArchivedAt: null,
+        })),
+      ),
+    ],
+    assignments: [
+      {
+        AssignmentID: "as_private",
+        TaskID: "t_private",
+        RequesterUser: "u_partner",
+        RecipientUser: "u_me",
+        WhyImportant: "It matters to Partner that I plan it myself.",
+        ExpectedLoad: 4,
+        Deadline: null,
+        ReminderPermission: "None",
+        State: "accepted",
+        LastMessage: "",
+        CreatedAt: iso(-2),
+        UpdatedAt: iso(-2),
+      },
+      {
+        AssignmentID: "as_reimb",
+        TaskID: "t_reimb",
+        RequesterUser: "u_dad",
+        RecipientUser: "u_me",
+        WhyImportant: "I dislike unresolved money and want loose financial matters closed.",
+        ExpectedLoad: 2,
+        Deadline: iso(4),
+        ReminderPermission: "One reminder",
+        State: "received",
+        LastMessage: "",
+        CreatedAt: iso(-1),
+        UpdatedAt: iso(-1),
+      },
+    ],
+    supportRequests: [],
+    notifications: [],
     access: [],
     persimmons: [
       {
@@ -213,13 +270,7 @@ export function seedDB(): DB {
   };
 }
 
-function c(
-  id: string,
-  viewer: string,
-  owner: string,
-  label: string,
-  canAssign: boolean,
-) {
+function c(id: string, viewer: string, owner: string, label: string, canAssign: boolean) {
   return {
     ConnectionID: id,
     OwnerUser: owner,
@@ -232,21 +283,22 @@ function c(
   };
 }
 
-function s(
-  StepID: string,
-  Task: string,
-  StepOrder: number,
-  StepText: string,
-  IsDone: boolean,
-) {
+function s(StepID: string, Task: string, StepOrder: number, StepText: string, IsDone: boolean) {
   return { StepID, Task, StepOrder, StepText, IsDone };
 }
 
-function t(partial: Partial<DB["tasks"][number]> & { TaskID: string; Title: string; OwnerUser: string }) {
+function t(
+  partial: Partial<DB["tasks"][number]> & { TaskID: string; Title: string; OwnerUser: string },
+) {
   return {
     Description: "",
+    CreatedByUser: partial.OwnerUser,
     RequestedByUser: null,
+    SortingDelegateUser: null,
     Category: "Other" as const,
+    CategoryID: null,
+    ProjectID: null,
+    ParentTaskID: null,
     Deadline: null,
     DeadlineBucket: "No deadline" as const,
     Priority: 3,
@@ -262,6 +314,7 @@ function t(partial: Partial<DB["tasks"][number]> & { TaskID: string; Title: stri
     LastReminder: null,
     AssignmentResponse: "" as const,
     Interesting: false,
+    ProgressOverride: null,
     CreatedAt: new Date().toISOString(),
     CompletedAt: null,
     ...partial,
@@ -270,63 +323,69 @@ function t(partial: Partial<DB["tasks"][number]> & { TaskID: string; Title: stri
 
 export const CHARACTERS = [
   {
-    CharacterID: "bulu",
-    DisplayName: "Bulu 紅耳布嚕",
-    EnglishName: "Bulu",
-    ChineseName: "紅耳布嚕",
-    Nickname: "Control Tower",
-    Role: "Control tower, reminders, announcements, noticing unfinished things.",
-    Image: null,
-    ShortPrompt: "Control Tower: 4 unsorted packages are waiting.",
+    CharacterID: "riedan",
+    DisplayName: "Riedan 阿笛",
+    EnglishName: "Riedan",
+    ChineseName: "阿笛",
+    Nickname: "The Connector · 連結者",
+    Role: "Connections, hand-offs, reminders and making sure messages reach the right person.",
+    Image: "/characters/riedan.png",
+    DefaultImage: "/characters/riedan.png",
+    ShortPrompt: "I will help this message reach the right person.",
   },
   {
-    CharacterID: "teddi",
-    DisplayName: "Teddi 喊包塔塔",
-    EnglishName: "Teddi",
-    ChineseName: "喊包塔塔",
-    Nickname: "Minimum Viable Worker",
-    Role: "Very-low-energy mode, shutdown, choosing minimum viable actions without shame.",
-    Image: null,
-    ShortPrompt: "Minimum viable worker mode. One tiny thing is enough.",
+    CharacterID: "falco",
+    DisplayName: "Falco 隼隼",
+    EnglishName: "Falco",
+    ChineseName: "隼隼",
+    Nickname: "The Pain Holder · 盛載傷痛者",
+    Role: "Holding pain and overload safely, reducing pressure and protecting capacity.",
+    Image: "/characters/falco.png",
+    DefaultImage: "/characters/falco.png",
+    ShortPrompt: "You do not have to carry all of this alone.",
   },
   {
     CharacterID: "elster",
-    DisplayName: "Elster 伊斯特 (柿務總管)",
+    DisplayName: "Elster 依斯特（柿務總管）",
     EnglishName: "Elster",
-    ChineseName: "伊斯特",
-    Nickname: "柿務總管",
-    Role: "Factory operations, execution, logistics, completion, persimmon economy.",
-    Image: null,
-    ShortPrompt: "Shipment completed. Acceptable. Here is a persimmon.",
+    ChineseName: "依斯特",
+    Nickname: "The Silent Builder · 沉默建造者",
+    Role: "Quietly building structure, carrying work through and recognising completion.",
+    Image: "/characters/elster.png",
+    DefaultImage: "/characters/elster.png",
+    ShortPrompt: "Quiet progress still counts. Let us build the next piece.",
   },
   {
-    CharacterID: "neuna",
-    DisplayName: "Neuna 連環九殺貓",
-    EnglishName: "Neuna",
-    ChineseName: "連環九殺貓",
-    Nickname: "The Breakdown Cat",
-    Role: "Breaking down tasks, prioritisation, stopping spiralling.",
-    Image: null,
-    ShortPrompt: "Are we actually solving the task, or wasting time thinking about the task?",
+    CharacterID: "tottie",
+    DisplayName: "Tottie 托蒂（連環九殺貓）",
+    EnglishName: "Tottie",
+    ChineseName: "托蒂",
+    Nickname: "The Boundary Analyst · 界線分析者",
+    Role: "Analysing boundaries, blockers, task shape and the next honest action.",
+    Image: "/characters/tottie.png",
+    DefaultImage: "/characters/tottie.png",
+    ShortPrompt: "Let us separate what is yours, what can wait and what happens next.",
   },
   {
-    CharacterID: "nuffel",
-    DisplayName: "Nuffel 攬枕狗",
-    EnglishName: "Nuffel",
-    ChineseName: "攬枕狗",
-    Nickname: "Support Dog",
-    Role: "Actionable support, body doubling, practical help, encouragement.",
-    Image: null,
-    ShortPrompt: "What kind of support helps here?",
+    CharacterID: "dulcie",
+    DisplayName: "Dulcie 朵詩",
+    EnglishName: "Dulcie",
+    ChineseName: "朵詩",
+    Nickname: "The Comforting Companion · 安心陪伴者",
+    Role: "Ground support, practical help, body doubling, encouragement and comfort.",
+    Image: "/characters/dulcie.png",
+    DefaultImage: "/characters/dulcie.png",
+    ShortPrompt: "What would help you feel supported right now?",
   },
   {
     CharacterID: "goldie",
     DisplayName: "Goldie 小今",
     EnglishName: "Goldie",
     ChineseName: "小今",
-    Nickname: "Novelty Scout",
-    Role: "Play, novelty, curiosity, enjoyable tasks, aliveness.",
-    Image: null,
-    ShortPrompt: "Anything interesting hiding in the pile?",
+    Nickname: "The Joy Seeker · 尋樂者",
+    Role: "Finding play, novelty, curiosity, enjoyment and aliveness in the work.",
+    Image: "/characters/goldie.png",
+    DefaultImage: "/characters/goldie.png",
+    ShortPrompt: "Where is the spark of joy hiding in this pile?",
   },
 ];
