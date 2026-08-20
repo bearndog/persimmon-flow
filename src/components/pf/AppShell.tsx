@@ -13,14 +13,14 @@ import {
 } from "@/components/ui/select";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { db, me, setCurrentUser, setLanguage } = usePF();
+  const { db, me, setCurrentUser, setLanguage, setLayoutMode } = usePF();
   const { t } = useI18n();
   const balance = balanceOf(db, me.UserID);
   const tabs = [
-    { to: "/", label: t("Landing Patch", "降落區"), icon: "🛬" },
-    { to: "/sorting", label: t("Sorting Line", "分類線"), icon: "🏭" },
-    { to: "/floor", label: t("Factory Floor", "工廠樓層"), icon: "📊" },
-    { to: "/harvest", label: t("Harvest", "收成"), icon: "🍊" },
+    { to: "/", label: t("Landing Patch", "卸貨區"), icon: "🛬" },
+    { to: "/sorting", label: t("Sorting Line", "整理區"), icon: "📦" },
+    { to: "/floor", label: t("Warehouse Floor", "工作區"), icon: "📋" },
+    { to: "/harvest", label: t("Harvest", "收成區"), icon: "🍊" },
   ] as const;
 
   return (
@@ -30,9 +30,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <h1 className="truncate font-display text-lg font-bold leading-tight">
-                Elster's Persimmon Factory
+                Elster's Persimmon Warehouse
               </h1>
-              <p className="text-xs text-muted-foreground">柿務總管工廠</p>
+              <p className="text-xs text-muted-foreground">依斯特的柿子倉庫</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-secondary px-3 py-1.5 text-sm font-bold text-secondary-foreground">
@@ -67,6 +67,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {db.language === "en" ? "繁中" : "EN"}
             </Button>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 h-8 w-full rounded-xl text-xs"
+            onClick={() => setLayoutMode(db.layoutMode === "character" ? "simple" : "character")}
+          >
+            {db.layoutMode === "character"
+              ? t("Switch to simple word-only view", "切換至純文字簡潔模式")
+              : t("Switch to character view", "切換至角色模式")}
+          </Button>
         </header>
 
         <main className="flex-1 px-4 pb-28 pt-4">{children}</main>

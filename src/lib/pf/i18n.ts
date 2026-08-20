@@ -17,15 +17,21 @@ export function useI18n() {
 }
 
 export function moodLabel(mood: string, zh: boolean) {
-  if (!zh) return mood;
-  const labels: Record<string, string> = {
-    "Neuna / overwhelmed": "Neuna－不知所措、過度刺激",
-    "Teddi / exhausted": "Teddi－筋疲力盡、低能量",
-    "Elster / focused": "Elster－專注、執行中",
-    "Goldie / energetic": "Goldie－精力充沛、好奇",
-    Fine: "Panda－平穩、顯示全部",
+  const labels: Record<string, [string, string]> = {
+    "Neuna / overwhelmed": [
+      "Falco — carrying pain or overwhelmed",
+      "Falco 隼隼－感到難受或負荷過重",
+    ],
+    "Teddi / exhausted": [
+      "Dulcie — needs comfort or low energy",
+      "Dulcie 朵詩－需要安慰或能量偏低",
+    ],
+    "Elster / focused": ["Elster — quietly focused", "Elster 依斯特－安靜專注"],
+    "Goldie / energetic": ["Goldie — playful and curious", "Goldie 小今－想玩、想探索"],
+    "Tottie / boundaries": ["Tottie — needs clearer boundaries", "Tottie 托蒂－需要理清界線"],
+    Fine: ["Riedan — steady and connected", "Riedan 阿笛－狀態平穩、想與人連結"],
   };
-  return labels[mood] ?? mood;
+  return labels[mood]?.[zh ? 1 : 0] ?? mood;
 }
 
 export function relativeTime(value: string, zh: boolean) {
@@ -42,25 +48,25 @@ export function relativeTime(value: string, zh: boolean) {
 export function uiLabel(value: string, zh: boolean) {
   if (!zh) return value;
   const labels: Record<string, string> = {
-    Inbox: "收件區",
-    Sorted: "已分類",
+    Inbox: "待整理",
+    Sorted: "已整理",
     "In Progress": "進行中",
     Blocked: "受阻",
     "Waiting for Someone": "等待他人",
     "Split into packages": "已拆成多個包裹",
     Done: "完成",
     Today: "今天",
-    Soon: "即將",
+    Soon: "短期內",
     Later: "稍後",
-    "No deadline": "沒有期限",
+    "No deadline": "不設限期",
     Custom: "自訂",
-    None: "不允許提醒",
-    "One reminder": "一次提醒",
-    "Every 3 days": "每三天一次",
+    None: "不設提醒",
+    "One reminder": "只提醒一次",
+    "Every 3 days": "每 3 天提醒一次",
     "📥 Received": "📥 已收到",
     "💤 Later / Low Capacity": "💤 稍後／能量不足",
     "❓ Need Clarification": "❓ 需要澄清",
-    "🚫 Can't Take This": "🚫 無法接下",
+    "🚫 Can't Take This": "🚫 未能接手",
     "▶️ In Progress": "▶️ 進行中",
     "✅ Done": "✅ 完成",
     pending: "等待回覆",
@@ -71,18 +77,18 @@ export function uiLabel(value: string, zh: boolean) {
     rejected: "已拒絕",
     completed: "已完成",
     "Practical help": "實際協助",
-    "Body doubling": "陪伴工作",
+    "Body doubling": "陪伴開工",
     Encouragement: "鼓勵",
     "Remind me": "提醒我",
     "Help me start": "幫我開始",
-    "Just acknowledge me": "只需肯定我",
-    "Give me space": "給我空間",
-    "I don't know where to start": "我不知道從哪裡開始",
+    "Just acknowledge me": "回應我一下就好",
+    "Give me space": "讓我靜一靜",
+    "I don't know where to start": "我不知道怎樣開始",
     "Too many steps": "步驟太多",
     "I need information": "我需要資料",
     "I'm afraid of doing it wrong": "我害怕做錯",
-    "It's boring / I can't initiate": "太沉悶／無法開始",
-    "I'm waiting for someone": "我正在等候別人",
+    "It's boring / I can't initiate": "太沉悶／提不起勁開始",
+    "I'm waiting for someone": "我要等別人回覆或行動",
     Other: "其他",
     "Work / Study": "工作／學習",
     Family: "家庭",

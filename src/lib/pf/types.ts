@@ -1,7 +1,13 @@
 export type Language = "en" | "zh-HK";
+export type LayoutMode = "character" | "simple";
 
 export type Mood =
-  "Neuna / overwhelmed" | "Teddi / exhausted" | "Elster / focused" | "Goldie / energetic" | "Fine";
+  | "Neuna / overwhelmed"
+  | "Teddi / exhausted"
+  | "Elster / focused"
+  | "Goldie / energetic"
+  | "Tottie / boundaries"
+  | "Fine";
 
 export type Category =
   | "Work / Study"
@@ -68,7 +74,9 @@ export type NotificationType =
   | "reminder"
   | "reminder_response"
   | "appreciation"
-  | "announcement";
+  | "announcement"
+  | "sorting_handoff"
+  | "character_coaching";
 
 export interface User {
   UserID: string;
@@ -85,7 +93,9 @@ export interface Task {
   TaskID: string;
   Title: string;
   Description: string;
+  CreatedByUser: string;
   OwnerUser: string;
+  SortingDelegateUser: string | null;
   RequestedByUser: string | null;
   Category: Category | "";
   CategoryID: string | null;
@@ -106,6 +116,7 @@ export interface Task {
   LastReminder: string | null;
   AssignmentResponse: AssignmentResponse;
   Interesting: boolean;
+  ProgressOverride: number | null;
   CreatedAt: string;
   CompletedAt: string | null;
 }
@@ -237,8 +248,9 @@ export interface BrainDump {
 }
 
 export interface DB {
-  schemaVersion: 2;
+  schemaVersion: 3;
   language: Language;
+  layoutMode: LayoutMode;
   users: User[];
   tasks: Task[];
   steps: TaskStep[];

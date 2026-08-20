@@ -16,6 +16,7 @@ import type {
   DB,
   DetailLevel,
   Language,
+  LayoutMode,
   Mood,
   Project,
   ReminderPermission,
@@ -27,8 +28,8 @@ import type {
   VisibleTask,
 } from "./types";
 
-const KEY = "epf.db.v2";
-const OLD_KEY = "epf.db.v1";
+const KEY = "epw.db.v3";
+const OLD_KEYS = ["epf.db.v2", "epf.db.v1"];
 const now = () => new Date().toISOString();
 const uid = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -36,7 +37,9 @@ const uid = (prefix: string) =>
 function taskDefaults(owner: string): Omit<Task, "TaskID" | "Title"> {
   return {
     Description: "",
+    CreatedByUser: owner,
     OwnerUser: owner,
+    SortingDelegateUser: null,
     RequestedByUser: null,
     Category: "",
     CategoryID: null,
@@ -57,6 +60,7 @@ function taskDefaults(owner: string): Omit<Task, "TaskID" | "Title"> {
     LastReminder: null,
     AssignmentResponse: "",
     Interesting: false,
+    ProgressOverride: null,
     CreatedAt: now(),
     CompletedAt: null,
   };
@@ -67,9 +71,21 @@ function migrate(input: unknown): DB {
   if (!input || typeof input !== "object") return base;
   const old = input as Partial<DB> & Record<string, unknown>;
   const oldCharacters = Array.isArray(old.characters) ? old.characters : [];
+  const legacyCharacterIds: Record<string, string> = {
+    riedan: "bulu",
+    falco: "teddi",
+    elster: "elster",
+    tottie: "neuna",
+    dulcie: "nuffel",
+    goldie: "goldie",
+  };
   const characters = base.characters.map((character) => {
-    const saved = oldCharacters.find((item) => item.CharacterID === character.CharacterID);
-    return saved ? { ...character, ...saved } : character;
+    const saved = oldCharacters.find(
+      (item) =>
+        item.CharacterID === character.CharacterID ||
+        item.CharacterID === legacyCharacterIds[character.CharacterID],
+    );
+    return saved?.Image ? { ...character, Image: saved.Image } : character;
   });
   const tasks = (Array.isArray(old.tasks) ? old.tasks : base.tasks).map((task) => ({
     ...taskDefaults(task.OwnerUser || base.currentUserId),
@@ -77,6 +93,9 @@ function migrate(input: unknown): DB {
     CategoryID: task.CategoryID ?? null,
     ProjectID: task.ProjectID ?? null,
     ParentTaskID: task.ParentTaskID ?? null,
+    CreatedByUser: task.CreatedByUser ?? task.OwnerUser ?? base.currentUserId,
+    SortingDelegateUser: task.SortingDelegateUser ?? null,
+    ProgressOverride: task.ProgressOverride ?? null,
   }));
   const dumps = (Array.isArray(old.dumps) ? old.dumps : []).map((dump) => ({
     ...dump,
@@ -112,8 +131,9 @@ function migrate(input: unknown): DB {
   return {
     ...base,
     ...old,
-    schemaVersion: 2,
+    schemaVersion: 3,
     language: old.language === "zh-HK" ? "zh-HK" : "en",
+    layoutMode: old.layoutMode === "simple" ? "simple" : "character",
     tasks,
     dumps,
     projects: Array.isArray(old.projects) ? old.projects : base.projects,
@@ -123,6 +143,15 @@ function migrate(input: unknown): DB {
       ? old.supportRequests
       : base.supportRequests,
     notifications: Array.isArray(old.notifications) ? old.notifications : base.notifications,
+    connections: (Array.isArray(old.connections) ? old.connections : base.connections).map(
+      (connection) => {
+        const seeded = base.connections.find(
+          (item) =>
+            item.OwnerUser === connection.OwnerUser && item.ViewerUser === connection.ViewerUser,
+        );
+        return seeded ? { ...connection, CanAssignTasks: seeded.CanAssignTasks } : connection;
+      },
+    ),
     characters,
   } as DB;
 }
@@ -130,7 +159,9 @@ function migrate(input: unknown): DB {
 function load(): DB {
   if (typeof window === "undefined") return seedDB();
   try {
-    const raw = window.localStorage.getItem(KEY) ?? window.localStorage.getItem(OLD_KEY);
+    const raw =
+      window.localStorage.getItem(KEY) ??
+      OLD_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean);
     return raw ? migrate(JSON.parse(raw)) : seedDB();
   } catch {
     return seedDB();
@@ -168,6 +199,7 @@ function activeConnection(db: DB, ownerId: string, viewerId: string) {
 }
 
 export function progressOf(db: DB, task: Task) {
+  if (task.ProgressOverride !== null) return task.ProgressOverride;
   const steps = db.steps.filter((step) => step.Task === task.TaskID);
   if (task.Status === "Done") return 100;
   if (steps.length === 0) {
@@ -307,8 +339,13 @@ interface Ctx {
   me: User;
   setCurrentUser: (id: string) => void;
   setLanguage: (language: Language) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
   addTask: (task: Partial<Task> & { Title: string }) => string;
-  addTasksFromDump: (text: string) => number;
+  addTasksFromDump: (text: string, sortingDelegate?: string | null) => number;
+  addOrganisedTask: (
+    task: Partial<Task> & { Title: string },
+    recipient?: string | null,
+  ) => { taskId: string; assignmentId: string | null };
   saveHoldingNote: (text: string) => string;
   updateHoldingNote: (id: string, text: string) => void;
   archiveHoldingNote: (id: string) => void;
@@ -316,6 +353,10 @@ interface Ctx {
   updateTask: (id: string, patch: Partial<Task>) => void;
   completeTask: (id: string) => { persimmons: number };
   splitTask: (id: string, lines: string) => number;
+  convertStepsToTasks: (id: string) => number;
+  applyBreakdownChoice: (id: string, blocker: Task["BlockerType"]) => "checklist" | "packages";
+  resolveSpiral: (id: string, values: { fact: string; next: string; park: string }) => void;
+  handoffSorting: (taskId: string, sorterId: string | null) => void;
   addStep: (taskId: string, text: string) => void;
   toggleStep: (stepId: string) => void;
   stepsOf: (taskId: string) => TaskStep[];
@@ -397,6 +438,10 @@ export function PFProvider({ children }: { children: ReactNode }) {
     setDb((current) => ({ ...current, language }));
   }, []);
 
+  const setLayoutMode = useCallback((layoutMode: LayoutMode) => {
+    setDb((current) => ({ ...current, layoutMode }));
+  }, []);
+
   const addTask = useCallback<Ctx["addTask"]>((partial) => {
     const id = uid("t");
     setDb((current) => ({
@@ -406,7 +451,7 @@ export function PFProvider({ children }: { children: ReactNode }) {
     return id;
   }, []);
 
-  const addTasksFromDump = useCallback<Ctx["addTasksFromDump"]>((text) => {
+  const addTasksFromDump = useCallback<Ctx["addTasksFromDump"]>((text, sortingDelegate = null) => {
     const lines = text
       .split("\n")
       .map((line) => line.trim())
@@ -417,11 +462,26 @@ export function PFProvider({ children }: { children: ReactNode }) {
         ...taskDefaults(current.currentUserId),
         TaskID: uid("t"),
         Title,
+        SortingDelegateUser:
+          sortingDelegate && sortingDelegate !== current.currentUserId ? sortingDelegate : null,
       }));
       const created = now();
+      const handoffNotification =
+        sortingDelegate && sortingDelegate !== current.currentUserId
+          ? notify(
+              sortingDelegate,
+              "sorting_handoff",
+              `${lines.length} new package${lines.length === 1 ? "" : "s"} need sorting.`,
+              current.currentUserId,
+              { TaskID: tasks[0]?.TaskID ?? null },
+            )
+          : null;
       return {
         ...current,
         tasks: [...tasks, ...current.tasks],
+        notifications: handoffNotification
+          ? [handoffNotification, ...current.notifications]
+          : current.notifications,
         dumps: [
           {
             DumpID: uid("dump"),
@@ -438,6 +498,54 @@ export function PFProvider({ children }: { children: ReactNode }) {
       };
     });
     return lines.length;
+  }, []);
+
+  const addOrganisedTask = useCallback<Ctx["addOrganisedTask"]>((partial, recipient = null) => {
+    const taskId = uid("t");
+    const assignmentId = recipient ? uid("as") : null;
+    setDb((current) => {
+      const task: Task = {
+        ...taskDefaults(current.currentUserId),
+        ...partial,
+        TaskID: taskId,
+        CreatedByUser: current.currentUserId,
+        OwnerUser: current.currentUserId,
+        Status: "Sorted",
+      };
+      if (!recipient || !assignmentId) {
+        return { ...current, tasks: [task, ...current.tasks] };
+      }
+      const assignment: AssignmentRequest = {
+        AssignmentID: assignmentId,
+        TaskID: taskId,
+        RequesterUser: current.currentUserId,
+        RecipientUser: recipient,
+        WhyImportant: task.WhyImportant,
+        ExpectedLoad: task.ExpectedLoad,
+        Deadline: task.Deadline,
+        ReminderPermission: task.ReminderPermission,
+        State: "pending",
+        LastMessage: "",
+        CreatedAt: now(),
+        UpdatedAt: now(),
+      };
+      return {
+        ...current,
+        tasks: [task, ...current.tasks],
+        assignments: [assignment, ...current.assignments],
+        notifications: [
+          notify(
+            recipient,
+            "task_assigned",
+            `${task.Title} was requested from you.`,
+            current.currentUserId,
+            { TaskID: taskId, AssignmentID: assignmentId },
+          ),
+          ...current.notifications,
+        ],
+      };
+    });
+    return { taskId, assignmentId };
   }, []);
 
   const saveHoldingNote = useCallback<Ctx["saveHoldingNote"]>((text) => {
@@ -541,6 +649,7 @@ export function PFProvider({ children }: { children: ReactNode }) {
         ...taskDefaults(parent.OwnerUser),
         TaskID: uid("t"),
         Title,
+        CreatedByUser: parent.CreatedByUser,
         ParentTaskID: parent.TaskID,
         ProjectID: parent.ProjectID,
         CategoryID: parent.CategoryID,
@@ -559,6 +668,161 @@ export function PFProvider({ children }: { children: ReactNode }) {
       };
     });
     return lines.length;
+  }, []);
+
+  const convertStepsToTasks = useCallback<Ctx["convertStepsToTasks"]>((id) => {
+    let count = 0;
+    setDb((current) => {
+      const parent = current.tasks.find((task) => task.TaskID === id);
+      if (!parent) return current;
+      const openSteps = current.steps.filter((step) => step.Task === id && !step.IsDone);
+      if (!openSteps.length) return current;
+      count = openSteps.length;
+      const children = openSteps.map((step) => ({
+        ...taskDefaults(parent.OwnerUser),
+        TaskID: uid("t"),
+        Title: step.StepText,
+        CreatedByUser: parent.CreatedByUser,
+        ParentTaskID: parent.TaskID,
+        ProjectID: parent.ProjectID,
+        CategoryID: parent.CategoryID,
+        Category: parent.Category,
+        Visibility: parent.Visibility,
+        DetailLevel: parent.DetailLevel,
+      }));
+      return {
+        ...current,
+        tasks: [
+          ...children,
+          ...current.tasks.map((task) =>
+            task.TaskID === id ? { ...task, Status: "Split into packages" as const } : task,
+          ),
+        ],
+      };
+    });
+    return count;
+  }, []);
+
+  const applyBreakdownChoice = useCallback<Ctx["applyBreakdownChoice"]>((id, blocker) => {
+    const mode = blocker === "Too many steps" ? "packages" : "checklist";
+    setDb((current) => {
+      const task = current.tasks.find((item) => item.TaskID === id);
+      if (!task) return current;
+      const suggestion: Partial<Record<Task["BlockerType"], string>> = {
+        "I don't know where to start": "Open what I need and write the first visible action",
+        "I need information": "Write down exactly which information is missing",
+        "I'm afraid of doing it wrong": "Define what ‘good enough’ would look like",
+        "It's boring / I can't initiate": "Set a five-minute timer and only begin",
+        "I'm waiting for someone": "Write who I am waiting for and what I need from them",
+        Other: "Name the smallest action that changes the situation",
+      };
+      const suggestedText = suggestion[blocker];
+      const alreadyExists = suggestedText
+        ? current.steps.some((step) => step.Task === id && step.StepText === suggestedText)
+        : true;
+      const status =
+        blocker === "I'm waiting for someone"
+          ? ("Waiting for Someone" as const)
+          : blocker === "I need information" || blocker === "Other"
+            ? ("Blocked" as const)
+            : task.Status === "Inbox"
+              ? ("Sorted" as const)
+              : task.Status;
+      return {
+        ...current,
+        tasks: current.tasks.map((item) =>
+          item.TaskID === id ? { ...item, BlockerType: blocker, Status: status } : item,
+        ),
+        steps:
+          suggestedText && !alreadyExists
+            ? [
+                ...current.steps,
+                {
+                  StepID: uid("st"),
+                  Task: id,
+                  StepOrder: current.steps.filter((step) => step.Task === id).length + 1,
+                  StepText: suggestedText,
+                  IsDone: false,
+                },
+              ]
+            : current.steps,
+      };
+    });
+    return mode;
+  }, []);
+
+  const resolveSpiral = useCallback<Ctx["resolveSpiral"]>((id, values) => {
+    setDb((current) => {
+      const task = current.tasks.find((item) => item.TaskID === id);
+      if (!task) return current;
+      const nextText = values.next.trim();
+      const existingNext = nextText
+        ? current.steps.some((step) => step.Task === id && step.StepText === nextText)
+        : true;
+      return {
+        ...current,
+        tasks: current.tasks.map((item) =>
+          item.TaskID === id
+            ? {
+                ...item,
+                Description: values.fact.trim() || item.Description,
+                ParkedThoughts: values.park.trim(),
+              }
+            : item,
+        ),
+        steps:
+          nextText && !existingNext
+            ? [
+                ...current.steps,
+                {
+                  StepID: uid("st"),
+                  Task: id,
+                  StepOrder: current.steps.filter((step) => step.Task === id).length + 1,
+                  StepText: nextText,
+                  IsDone: false,
+                },
+              ]
+            : current.steps,
+        notifications: [
+          notify(
+            current.currentUserId,
+            "character_coaching",
+            `Tottie cleared some space around “${task.Title}”. Your next action is: ${nextText || "pause and return when ready"}.`,
+            null,
+            { TaskID: id },
+          ),
+          ...current.notifications,
+        ],
+      };
+    });
+  }, []);
+
+  const handoffSorting = useCallback<Ctx["handoffSorting"]>((taskId, sorterId) => {
+    setDb((current) => {
+      const task = current.tasks.find((item) => item.TaskID === taskId);
+      if (!task) return current;
+      const delegate = sorterId && sorterId !== task.OwnerUser ? sorterId : null;
+      return {
+        ...current,
+        tasks: current.tasks.map((item) =>
+          item.TaskID === taskId
+            ? { ...item, SortingDelegateUser: delegate, Status: "Inbox" as const }
+            : item,
+        ),
+        notifications: delegate
+          ? [
+              notify(
+                delegate,
+                "sorting_handoff",
+                `${task.Title} needs sorting.`,
+                current.currentUserId,
+                { TaskID: taskId },
+              ),
+              ...current.notifications,
+            ]
+          : current.notifications,
+      };
+    });
   }, []);
 
   const addStep = useCallback<Ctx["addStep"]>((taskId, text) => {
@@ -596,7 +860,12 @@ export function PFProvider({ children }: { children: ReactNode }) {
     let result: string | null = null;
     setDb((current) => {
       const task = current.tasks.find((item) => item.TaskID === taskId);
-      if (!task || task.OwnerUser !== current.currentUserId) return current;
+      if (
+        !task ||
+        (task.OwnerUser !== current.currentUserId &&
+          task.SortingDelegateUser !== current.currentUserId)
+      )
+        return current;
       const existing = current.assignments.find(
         (item) => item.TaskID === taskId && !["rejected", "completed"].includes(item.State),
       );
@@ -641,6 +910,8 @@ export function PFProvider({ children }: { children: ReactNode }) {
                 ExpectedLoad: details.load,
                 Deadline: details.deadline,
                 ReminderPermission: details.reminder,
+                Status: "Sorted" as const,
+                SortingDelegateUser: null,
               }
             : item,
         ),
@@ -686,11 +957,15 @@ export function PFProvider({ children }: { children: ReactNode }) {
                   OwnerUser:
                     state === "accepted" || state === "completed"
                       ? assignment.RecipientUser
-                      : item.OwnerUser,
+                      : state === "rejected"
+                        ? item.CreatedByUser || assignment.RequesterUser
+                        : item.OwnerUser,
                   RequestedByUser:
                     state === "accepted" || state === "completed"
                       ? assignment.RequesterUser
-                      : item.RequestedByUser,
+                      : state === "rejected"
+                        ? null
+                        : item.RequestedByUser,
                   AssignmentResponse: response,
                   Status:
                     state === "accepted"
@@ -869,7 +1144,7 @@ export function PFProvider({ children }: { children: ReactNode }) {
         return current;
       }
       if (balanceOf(current, current.currentUserId) < 1) {
-        result = { ok: false, message: "You need 1 🍊 to send a Bulu ping." };
+        result = { ok: false, message: "You need 1 🍊 to send a Riedan ping." };
         return current;
       }
       const previous = current.pings
@@ -880,13 +1155,13 @@ export function PFProvider({ children }: { children: ReactNode }) {
         return current;
       }
       if (previous && Date.now() - new Date(previous.Timestamp).getTime() < 86400000) {
-        result = { ok: false, message: "Bulu allows one ping per package per 24 hours." };
+        result = { ok: false, message: "Riedan allows one ping per package per 24 hours." };
         return current;
       }
       const actor = current.users.find((user) => user.UserID === current.currentUserId)!;
       const pingId = uid("ping");
       const message = `${actor.DisplayName} is checking in about ${task.Title}.`;
-      result = { ok: true, message: "Bulu announcement dispatched." };
+      result = { ok: true, message: "Riedan announcement dispatched." };
       return {
         ...current,
         pings: [
@@ -915,7 +1190,7 @@ export function PFProvider({ children }: { children: ReactNode }) {
             ToUser: current.currentUserId,
             Task: taskId,
             Amount: -1,
-            Reason: "Bulu ping",
+            Reason: "Riedan ping",
             Timestamp: now(),
           },
           ...current.persimmons,
@@ -1180,7 +1455,7 @@ export function PFProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => {
     window.localStorage.removeItem(KEY);
-    window.localStorage.removeItem(OLD_KEY);
+    OLD_KEYS.forEach((key) => window.localStorage.removeItem(key));
     setDb(seedDB());
   }, []);
 
@@ -1190,8 +1465,10 @@ export function PFProvider({ children }: { children: ReactNode }) {
       me,
       setCurrentUser,
       setLanguage,
+      setLayoutMode,
       addTask,
       addTasksFromDump,
+      addOrganisedTask,
       saveHoldingNote,
       updateHoldingNote,
       archiveHoldingNote,
@@ -1199,6 +1476,10 @@ export function PFProvider({ children }: { children: ReactNode }) {
       updateTask,
       completeTask,
       splitTask,
+      convertStepsToTasks,
+      applyBreakdownChoice,
+      resolveSpiral,
+      handoffSorting,
       addStep,
       toggleStep,
       stepsOf,
@@ -1230,8 +1511,10 @@ export function PFProvider({ children }: { children: ReactNode }) {
       me,
       setCurrentUser,
       setLanguage,
+      setLayoutMode,
       addTask,
       addTasksFromDump,
+      addOrganisedTask,
       saveHoldingNote,
       updateHoldingNote,
       archiveHoldingNote,
@@ -1239,6 +1522,10 @@ export function PFProvider({ children }: { children: ReactNode }) {
       updateTask,
       completeTask,
       splitTask,
+      convertStepsToTasks,
+      applyBreakdownChoice,
+      resolveSpiral,
+      handoffSorting,
       addStep,
       toggleStep,
       stepsOf,

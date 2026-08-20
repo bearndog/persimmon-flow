@@ -2,18 +2,18 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AppShell } from "@/components/pf/AppShell";
-import { CharacterSays } from "@/components/pf/Character";
+import { CharacterAvatar, CharacterSays } from "@/components/pf/Character";
 import { Chip, Scale } from "@/components/pf/Bits";
-import { TaskCard } from "@/components/pf/TaskCard";
 import { usePF } from "@/lib/pf/store";
 import { uiLabel, useI18n } from "@/lib/pf/i18n";
 import type { ReminderPermission } from "@/lib/pf/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 export const Route = createFileRoute("/sorting")({
-  head: () => ({ meta: [{ title: "Sorting Line — Elster's Persimmon Factory" }] }),
+  head: () => ({ meta: [{ title: "Sorting Area — Elster's Persimmon Warehouse" }] }),
   component: SortingLine,
 });
 
@@ -21,7 +21,6 @@ function SortingLine() {
   const {
     db,
     me,
-    myTasks,
     updateTask,
     sendAssignment,
     addProject,
@@ -30,7 +29,15 @@ function SortingLine() {
     archiveCategory,
   } = usePF();
   const { t, zh } = useI18n();
-  const inbox = myTasks().filter((task) => task.OwnerUser === me.UserID && task.Status === "Inbox");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const queue = db.tasks.filter(
+    (item) =>
+      item.Status === "Inbox" &&
+      (item.OwnerUser === me.UserID || item.SortingDelegateUser === me.UserID),
+  );
+  const inbox = queue.filter(
+    (item) => projectFilter === "all" || (item.ProjectID ?? "none") === projectFilter,
+  );
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const task = inbox.find((item) => item.TaskID === selectedTaskId) ?? inbox[0];
   const index = task ? inbox.findIndex((item) => item.TaskID === task.TaskID) : -1;
@@ -52,15 +59,38 @@ function SortingLine() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.TaskID]);
 
-  const connections = db.connections.filter(
-    (connection) =>
-      connection.Active && connection.ViewerUser === me.UserID && connection.CanAssignTasks,
+  const assignableUsers = Array.from(
+    new Map(
+      [
+        ...(task && task.OwnerUser !== me.UserID
+          ? [db.users.find((user) => user.UserID === task.OwnerUser)]
+          : []),
+        ...db.connections
+          .filter(
+            (connection) =>
+              connection.Active && connection.ViewerUser === me.UserID && connection.CanAssignTasks,
+          )
+          .map((connection) => db.users.find((user) => user.UserID === connection.OwnerUser)),
+      ]
+        .filter(Boolean)
+        .map((user) => [user!.UserID, user!] as const),
+    ).values(),
   );
   const projects = db.projects.filter(
-    (project) => project.OwnerUser === me.UserID && !project.ArchivedAt,
+    (project) =>
+      !project.ArchivedAt &&
+      (!task || project.OwnerUser === task.OwnerUser || project.OwnerUser === me.UserID),
   );
-  const categories = db.categories.filter(
-    (category) => category.OwnerUser === me.UserID && !category.ArchivedAt,
+  const categories = Array.from(
+    new Map(
+      db.categories
+        .filter(
+          (category) =>
+            !category.ArchivedAt &&
+            (!task || category.OwnerUser === task.OwnerUser || category.OwnerUser === me.UserID),
+        )
+        .map((category) => [`${category.ProjectID ?? "general"}:${category.Name}`, category]),
+    ).values(),
   );
   const recipient = db.users.find((user) => user.UserID === proposedRecipient);
 
@@ -72,12 +102,34 @@ function SortingLine() {
 
   return (
     <AppShell>
-      <CharacterSays id="bulu">
+      <CharacterSays id="riedan">
         {t(
-          `Control Tower: ${inbox.length} unsorted package${inbox.length === 1 ? "" : "s"} on the line.`,
-          `控制塔：分類線上有 ${inbox.length} 個未分類包裹。`,
+          `Riedan can see ${queue.length} package${queue.length === 1 ? "" : "s"} waiting to be organised.`,
+          `阿笛看到有 ${queue.length} 個包裹等待整理。`,
         )}
       </CharacterSays>
+
+      <label className="mt-3 block rounded-2xl bg-card p-3 text-sm font-semibold ring-1 ring-border">
+        {t("Show project", "按項目顯示")}
+        <select
+          className="mt-1 h-11 w-full rounded-xl border bg-background px-3"
+          value={projectFilter}
+          onChange={(event) => {
+            setProjectFilter(event.target.value);
+            setSelectedTaskId("");
+          }}
+        >
+          <option value="all">{t("All projects", "所有項目")}</option>
+          <option value="none">{t("No project", "未加入項目")}</option>
+          {Array.from(
+            new Map(db.projects.filter((p) => !p.ArchivedAt).map((p) => [p.ProjectID, p])).values(),
+          ).map((project) => (
+            <option key={project.ProjectID} value={project.ProjectID}>
+              {project.Name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {inbox.length > 1 ? (
         <div className="mt-3 rounded-3xl bg-card p-3 ring-1 ring-border">
@@ -110,17 +162,24 @@ function SortingLine() {
         <div className="mt-6 rounded-3xl bg-card p-6 text-center ring-1 ring-border">
           <p className="text-4xl">🏭</p>
           <h2 className="mt-2 font-display text-lg font-bold">
-            {t("Line is clear", "分類線已清空")}
+            {t("Nothing waiting here", "這裡沒有待整理的包裹")}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("Nothing is waiting to be sorted.", "沒有包裹等候分類。")}
+            {queue.length
+              ? t("Try choosing another project.", "請嘗試選擇另一個項目。")
+              : t("Everything has been organised.", "所有包裹都已整理好。")}
           </p>
         </div>
       ) : (
         <div className="mt-4 space-y-4">
           <div className="rounded-3xl bg-card p-4 ring-1 ring-border">
             <p className="text-xs font-semibold text-muted-foreground">
-              {t("Package on the line", "分類線上的包裹")}
+              {task.SortingDelegateUser === me.UserID && task.OwnerUser !== me.UserID
+                ? t(
+                    `You are organising this for ${db.users.find((u) => u.UserID === task.OwnerUser)?.DisplayName ?? "its owner"}.`,
+                    `你正在替 ${db.users.find((u) => u.UserID === task.OwnerUser)?.DisplayName ?? "包裹主人"} 整理這個包裹。`,
+                  )
+                : t("Package being organised", "正在整理的包裹")}
             </p>
             <h2 className="font-display text-2xl font-bold leading-snug">{task.Title}</h2>
 
@@ -129,20 +188,19 @@ function SortingLine() {
                 <p className="text-sm font-semibold">{t("WHO is this for?", "這是給誰的？")}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Chip active={!proposedRecipient} onClick={() => setProposedRecipient("")}>
-                    {t("Me", "我")}
+                    {task.OwnerUser === me.UserID
+                      ? t("Keep with me", "由我負責")
+                      : t("Keep with its owner", "交回包裹主人")}
                   </Chip>
-                  {connections.map((connection) => {
-                    const user = db.users.find((item) => item.UserID === connection.OwnerUser)!;
-                    return (
-                      <Chip
-                        key={connection.ConnectionID}
-                        active={proposedRecipient === user.UserID}
-                        onClick={() => setProposedRecipient(user.UserID)}
-                      >
-                        {user.DisplayName}
-                      </Chip>
-                    );
-                  })}
+                  {assignableUsers.map((user) => (
+                    <Chip
+                      key={user.UserID}
+                      active={proposedRecipient === user.UserID}
+                      onClick={() => setProposedRecipient(user.UserID)}
+                    >
+                      {user.DisplayName}
+                    </Chip>
+                  ))}
                 </div>
               </div>
 
@@ -315,6 +373,16 @@ function SortingLine() {
                 value={task.Priority}
                 onChange={(value) => updateTask(task.TaskID, { Priority: value })}
               />
+              <label className="flex items-center justify-between rounded-2xl bg-amber-50 p-3 text-sm font-semibold ring-1 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900">
+                <span className="flex items-center gap-2">
+                  <CharacterAvatar id="goldie" size="sm" />
+                  {t("Goldie: this feels interesting", "小今：這件事令我感到有趣")}
+                </span>
+                <Switch
+                  checked={task.Interesting}
+                  onCheckedChange={(value) => updateTask(task.TaskID, { Interesting: value })}
+                />
+              </label>
               <Scale
                 label={t("Expected load", "預計負荷")}
                 hint={t(
@@ -388,7 +456,6 @@ function SortingLine() {
                           );
                           return;
                         }
-                        updateTask(task.TaskID, { Status: "Sorted", WhyImportant: why });
                         toast(
                           t(
                             `Request sent to ${recipient.DisplayName}.`,
@@ -405,16 +472,19 @@ function SortingLine() {
                 <Button
                   className="h-14 w-full rounded-2xl text-base"
                   onClick={() => {
-                    updateTask(task.TaskID, { Status: "Sorted", WhyImportant: why });
-                    toast(t("Package sent to the Factory Floor.", "包裹已送到工廠樓層。"));
+                    updateTask(task.TaskID, {
+                      Status: "Sorted",
+                      WhyImportant: why,
+                      SortingDelegateUser: null,
+                    });
+                    toast(t("Package sent to the Warehouse Floor.", "包裹已送到工作區。"));
                   }}
                 >
-                  🏭 {t("Send to the Factory Floor", "送到工廠樓層")}
+                  📦 {t("Send to the Warehouse Floor", "送到工作區")}
                 </Button>
               )}
             </div>
           </div>
-          <TaskCard task={task} />
         </div>
       )}
     </AppShell>

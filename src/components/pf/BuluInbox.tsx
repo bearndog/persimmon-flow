@@ -58,7 +58,7 @@ export function BuluInbox() {
       <SheetTrigger asChild>
         <Button variant="secondary" size="sm" className="relative h-9 rounded-xl px-3">
           <Bell className="size-4" />
-          <span className="sr-only">{t("Open Bulu Inbox", "開啟 Bulu 收件箱")}</span>
+          <span className="sr-only">{t("Open Riedan Inbox", "開啟阿笛收件匣")}</span>
           {unread ? (
             <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
               {unread}
@@ -68,7 +68,7 @@ export function BuluInbox() {
       </SheetTrigger>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>{t("Bulu Inbox", "Bulu 收件箱")}</SheetTitle>
+          <SheetTitle>{t("Riedan Inbox", "阿笛收件匣")}</SheetTitle>
           <SheetDescription>
             {t(
               "Assignments, replies, support and announcements for this demo user.",
@@ -117,7 +117,7 @@ export function BuluInbox() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground">
-                      {actor?.DisplayName ?? t("Factory", "工廠")} ·{" "}
+                      {actor?.DisplayName ?? t("Warehouse", "倉庫")} ·{" "}
                       {relativeTime(item.CreatedAt, zh)}
                     </p>
                     <p className="mt-1 text-sm">{notificationMessage(item, db, zh)}</p>
@@ -221,6 +221,10 @@ function notificationMessage(item: ActivityNotification, db: DB, zh: boolean) {
       return `${title}：${item.Message.includes("Got it") ? "📥 收到" : "💤 稍後"}`;
     case "appreciation":
       return item.Message.replace("You received", "你收到");
+    case "sorting_handoff":
+      return `請你協助整理「${title}」。包裹仍然屬於原本的主人。`;
+    case "character_coaching":
+      return `托蒂已替「${title}」整理思緒。下一個行動已加入任務。`;
     default:
       return item.Message;
   }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AppShell } from "@/components/pf/AppShell";
-import { CharacterSays } from "@/components/pf/Character";
+import { CharacterAvatar, CharacterSays } from "@/components/pf/Character";
 import { Chip, LoadDot, Scale } from "@/components/pf/Bits";
 import { TaskCard } from "@/components/pf/TaskCard";
 import { usePF, calculatedLoad, viewTask } from "@/lib/pf/store";
@@ -13,13 +13,13 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/floor")({
   head: () => ({
     meta: [
-      { title: "Factory Floor — Elster's Persimmon Factory" },
+      { title: "Warehouse Floor — Elster's Persimmon Warehouse" },
       {
         name: "description",
         content:
           "See your own workload and the capacity of the people you share with, without exposing private details.",
       },
-      { property: "og:title", content: "Factory Floor — Elster's Persimmon Factory" },
+      { property: "og:title", content: "Warehouse Floor — Elster's Persimmon Warehouse" },
       {
         property: "og:description",
         content:
@@ -31,11 +31,11 @@ export const Route = createFileRoute("/floor")({
 });
 
 const MOODS: { mood: Mood; character: string; blurb: string }[] = [
-  { mood: "Neuna / overwhelmed", character: "neuna", blurb: "Overwhelmed, overstimulated" },
-  { mood: "Teddi / exhausted", character: "teddi", blurb: "Exhausted, shutdown" },
+  { mood: "Tottie / boundaries", character: "tottie", blurb: "Overwhelmed, need boundaries" },
+  { mood: "Teddi / exhausted", character: "falco", blurb: "Exhausted, need gentleness" },
   { mood: "Elster / focused", character: "elster", blurb: "Focused, doing things" },
   { mood: "Goldie / energetic", character: "goldie", blurb: "Energetic, novelty-seeking" },
-  { mood: "Fine", character: "bulu", blurb: "Normal" },
+  { mood: "Fine", character: "riedan", blurb: "Steady / connected" },
 ];
 
 const FILTERS = [
@@ -53,6 +53,7 @@ function FactoryFloor() {
   const { t, zh } = useI18n();
   const [view, setView] = useState<"mine" | "people">("mine");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [projectFilter, setProjectFilter] = useState("all");
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [mood, setMood] = useState<Mood>(me.CurrentMood);
   const [load, setLoad] = useState<number>(me.CurrentLoad ?? calculatedLoad(db, me.UserID));
@@ -61,18 +62,25 @@ function FactoryFloor() {
 
   const calc = calculatedLoad(db, me.UserID);
   const open = Array.from(new Map(myTasks().map((task) => [task.TaskID, task])).values()).filter(
-    (task) => task.Status !== "Done" && task.Status !== "Split into packages",
+    (task) =>
+      task.Status !== "Inbox" && task.Status !== "Done" && task.Status !== "Split into packages",
   );
-  const filtered = applyFilter(open, filter).sort(byMood(me.CurrentMood));
+  const projectFiltered = open.filter(
+    (task) => projectFilter === "all" || (task.ProjectID ?? "none") === projectFilter,
+  );
+  const filtered = applyFilter(projectFiltered, filter).sort(byMood(me.CurrentMood));
+  const projects = db.projects.filter(
+    (project) => project.OwnerUser === me.UserID && !project.ArchivedAt,
+  );
   const moodView = moodConfig(me.CurrentMood);
   const shown = moodView.limit && !showEverything ? filtered.slice(0, moodView.limit) : filtered;
 
   return (
     <AppShell>
-      {/* Bulu check-in */}
+      {/* Character-led check-in */}
       <div className="rounded-3xl bg-card p-4 ring-1 ring-border">
-        <CharacterSays id="bulu">
-          {t("How is the factory running?", "工廠今天運作得怎樣？")}
+        <CharacterSays id="riedan">
+          {t("How are you arriving at the warehouse today?", "你今天來到倉庫時，感覺如何？")}
         </CharacterSays>
         {!checkInOpen ? (
           <Button
@@ -85,11 +93,20 @@ function FactoryFloor() {
           </Button>
         ) : (
           <div className="mt-3 space-y-4">
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {MOODS.map((m) => (
-                <Chip key={m.mood} active={mood === m.mood} onClick={() => setMood(m.mood)}>
-                  {moodLabel(m.mood, zh)}
-                </Chip>
+                <button
+                  type="button"
+                  key={m.mood}
+                  onClick={() => setMood(m.mood)}
+                  className={`rounded-3xl p-3 text-center ring-2 transition ${mood === m.mood ? "bg-accent ring-primary" : "bg-background ring-border"}`}
+                >
+                  <CharacterAvatar id={m.character} size="lg" className="mx-auto" />
+                  <span className="mt-2 block text-sm font-semibold">{moodLabel(m.mood, zh)}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {zh ? moodBlurbZh(m.character) : m.blurb}
+                  </span>
+                </button>
               ))}
             </div>
             <Scale
@@ -156,6 +173,23 @@ function FactoryFloor() {
             ) : null}
           </div>
 
+          <label className="mt-3 block text-sm font-semibold">
+            {t("Project", "項目")}
+            <select
+              className="mt-1 h-11 w-full rounded-xl border bg-card px-3"
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+            >
+              <option value="all">{t("All projects", "所有項目")}</option>
+              <option value="none">{t("No project", "未加入項目")}</option>
+              {projects.map((project) => (
+                <option key={project.ProjectID} value={project.ProjectID}>
+                  {project.Name}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>
               {t(
@@ -178,7 +212,7 @@ function FactoryFloor() {
 
           <div className="mt-4 space-y-4">
             {shown.map((t) => (
-              <TaskCard key={t.TaskID} task={t} />
+              <TaskCard key={t.TaskID} task={t} context="floor" />
             ))}
             {!shown.length ? (
               <p className="rounded-3xl bg-card p-6 text-center text-sm text-muted-foreground ring-1 ring-border">
@@ -325,7 +359,7 @@ function filterLabel(filter: (typeof FILTERS)[number], zh: boolean) {
 function byMood(mood: Mood) {
   return (a: Task, b: Task) => {
     if (mood === "Teddi / exhausted") return a.ExpectedLoad - b.ExpectedLoad;
-    if (mood === "Neuna / overwhelmed")
+    if (mood === "Neuna / overwhelmed" || mood === "Tottie / boundaries")
       return b.Priority - a.Priority || a.ExpectedLoad - b.ExpectedLoad;
     if (mood === "Goldie / energetic")
       return Number(b.Interesting) - Number(a.Interesting) || b.Priority - a.Priority;
@@ -336,16 +370,17 @@ function byMood(mood: Mood) {
 
 function moodConfig(mood: Mood) {
   switch (mood) {
+    case "Tottie / boundaries":
     case "Neuna / overwhelmed":
       return {
-        character: "neuna",
+        character: "tottie",
         message: "Too much input. Let's reduce the field.",
         messageZh: "資訊太多了，先縮小範圍。",
         limit: 3,
       };
     case "Teddi / exhausted":
       return {
-        character: "teddi",
+        character: "falco",
         message: "Minimum viable worker mode. One tiny action is enough.",
         messageZh: "最低可行工作模式，一個微小行動已足夠。",
         limit: 1,
@@ -366,10 +401,21 @@ function moodConfig(mood: Mood) {
       };
     default:
       return {
-        character: "bulu",
+        character: "riedan",
         message: "Steady line today. Suggestions only, never restrictions.",
         messageZh: "今天運作平穩；模式只是建議，不是限制。",
         limit: 0,
       };
   }
+}
+
+function moodBlurbZh(character: string) {
+  const labels: Record<string, string> = {
+    tottie: "覺得混亂，需要界線",
+    falco: "精疲力竭，需要溫柔對待",
+    elster: "專注，準備行動",
+    goldie: "精力充沛，想找新鮮感",
+    riedan: "平穩，保持連結",
+  };
+  return labels[character] ?? "";
 }

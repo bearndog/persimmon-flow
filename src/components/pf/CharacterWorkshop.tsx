@@ -75,8 +75,9 @@ export function CharacterWorkshop() {
               <CharacterAvatar id={character.CharacterID} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{character.DisplayName}</p>
+                <p className="text-xs font-medium text-foreground/80">{character.Nickname}</p>
                 <p className="text-xs text-muted-foreground">
-                  {character.Image
+                  {character.Image !== character.DefaultImage
                     ? t("Custom drawing", "自訂繪圖")
                     : t("Default character", "預設角色")}
                 </p>
@@ -93,7 +94,7 @@ export function CharacterWorkshop() {
                       onChange={(event) => loadFile(character.CharacterID, event.target.files?.[0])}
                     />
                   </label>
-                  {character.Image ? (
+                  {character.Image !== character.DefaultImage ? (
                     <Button
                       variant="ghost"
                       size="sm"

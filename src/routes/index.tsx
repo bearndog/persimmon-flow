@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import type { ReminderPermission } from "@/lib/pf/types";
 
 export const Route = createFileRoute("/")({
-  head: () => ({ meta: [{ title: "Landing Patch — Elster's Persimmon Factory" }] }),
+  head: () => ({ meta: [{ title: "Landing Patch — Elster's Persimmon Warehouse" }] }),
   component: LandingPatch,
 });
 
@@ -25,14 +25,14 @@ function LandingPatch() {
     updateHoldingNote,
     archiveHoldingNote,
     convertHoldingNote,
-    addTask,
-    sendAssignment,
+    addOrganisedTask,
     db,
     answerPing,
   } = usePF();
   const { t, zh } = useI18n();
   const [text, setText] = useState("");
   const [asLines, setAsLines] = useState(true);
+  const [sortingDelegate, setSortingDelegate] = useState("");
   const [organised, setOrganised] = useState(false);
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -44,7 +44,7 @@ function LandingPatch() {
   const [why, setWhy] = useState("");
   const [reminder, setReminder] = useState<ReminderPermission>("None");
 
-  const inbox = myTasks().filter((task) => task.Status === "Inbox");
+  const inbox = myTasks().filter((task) => task.OwnerUser === me.UserID && task.Status === "Inbox");
   const pings = db.pings.filter((ping) => ping.ToUser === me.UserID && !ping.Response);
   const holding = db.dumps.filter(
     (dump) => dump.User === me.UserID && dump.Kind === "holding" && !dump.ArchivedAt,
@@ -69,10 +69,13 @@ function LandingPatch() {
   return (
     <AppShell>
       <h2 className="font-display text-2xl font-bold leading-tight">
-        {t("What's flying around your brain?", "腦海裡有甚麼在飛？")}
+        {t("What's taking up space in your head?", "腦內有甚麼事情一直打轉？")}
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        {t("Dump it here. Organisation can happen later.", "先放在這裡，之後才整理也可以。")}
+        {t(
+          "Put it all down here. You can organise it later.",
+          "先全部放在這裡，稍後再整理也可以。",
+        )}
       </p>
 
       <Textarea
@@ -89,28 +92,52 @@ function LandingPatch() {
           {t("Keep as a holding note", "保留為待整理筆記")}
         </Chip>
       </div>
+      {asLines && connections.length ? (
+        <label className="mt-3 block text-sm font-semibold">
+          {t("Who should sort these packages?", "之後由誰整理這些包裹？")}
+          <select
+            className="mt-1 h-11 w-full rounded-xl border bg-card px-3"
+            value={sortingDelegate}
+            onChange={(event) => setSortingDelegate(event.target.value)}
+          >
+            <option value="">{t("I will sort them", "由我整理")}</option>
+            {connections.map((user) => (
+              <option key={user.UserID} value={user.UserID}>
+                {user.DisplayName}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-xs font-normal text-muted-foreground">
+            {t(
+              "This hands over the organising only. You still own the packages.",
+              "這只會交由對方整理；包裹仍然屬於你。",
+            )}
+          </span>
+        </label>
+      ) : null}
       <Button
         className="mt-3 h-14 w-full rounded-2xl text-base"
         onClick={() => {
           if (!text.trim()) return;
           if (asLines) {
-            const count = addTasksFromDump(text);
+            const count = addTasksFromDump(text, sortingDelegate || null);
             toast(
               t(
                 `${count} package${count === 1 ? "" : "s"} landed in the Inbox.`,
-                `${count} 個包裹已放入收件區。`,
+                `${count} 個包裹已放到待整理區。`,
               ),
             );
           } else {
             saveHoldingNote(text);
             toast(
-              t("Holding note saved. It is not a task yet.", "待整理筆記已儲存，尚未成為任務。"),
+              t("Holding note saved. It is not a task yet.", "暫存筆記已保存，暫時不會當作任務。"),
             );
           }
           setText("");
+          setSortingDelegate("");
         }}
       >
-        🛬 {t("Dump it", "放下來")}
+        🛬 {t("Unload it", "卸下來")}
       </Button>
 
       <Button
@@ -118,7 +145,7 @@ function LandingPatch() {
         className="mt-3 h-14 w-full rounded-2xl"
         onClick={() => setOrganised((value) => !value)}
       >
-        + {t("Add an organised package", "新增已整理包裹")}
+        + {t("Add an organised package", "新增已整理的包裹")}
       </Button>
 
       {organised ? (
@@ -129,13 +156,13 @@ function LandingPatch() {
             placeholder={t("Package title", "包裹標題")}
           />
           <label className="block text-sm font-semibold">
-            {t("Project", "專案")}
+            {t("Project", "項目")}
             <select
               className="mt-1 h-11 w-full rounded-xl border bg-background px-3"
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
             >
-              <option value="">{t("No project", "沒有專案")}</option>
+              <option value="">{t("No project", "不屬於任何項目")}</option>
               {projects.map((project) => (
                 <option key={project.ProjectID} value={project.ProjectID}>
                   {project.Name}
@@ -150,7 +177,7 @@ function LandingPatch() {
               value={categoryId}
               onChange={(event) => setCategoryId(event.target.value)}
             >
-              <option value="">{t("No category", "沒有分類")}</option>
+              <option value="">{t("No category", "暫不分類")}</option>
               {categories.map((category) => (
                 <option key={category.CategoryID} value={category.CategoryID}>
                   {uiLabel(category.Name, zh)}
@@ -199,42 +226,37 @@ function LandingPatch() {
             onClick={() => {
               if (!title.trim()) return;
               const category = db.categories.find((item) => item.CategoryID === categoryId);
-              const id = addTask({
-                Title: title.trim(),
-                ProjectID: projectId || null,
-                CategoryID: categoryId || null,
-                Category: (category?.Name as never) ?? "",
-                Deadline: deadline ? new Date(`${deadline}T12:00:00`).toISOString() : null,
-                DeadlineBucket: deadline ? "Custom" : "No deadline",
-                ExpectedLoad: load,
-                Priority: priority,
-                WhyImportant: why,
-                Status: recipient ? "Inbox" : "Sorted",
-              });
-              if (recipient) {
-                sendAssignment(id, recipient, {
-                  why,
-                  load,
-                  deadline: deadline ? new Date(`${deadline}T12:00:00`).toISOString() : null,
-                  reminder,
-                });
-              }
+              addOrganisedTask(
+                {
+                  Title: title.trim(),
+                  ProjectID: projectId || null,
+                  CategoryID: categoryId || null,
+                  Category: (category?.Name as never) ?? "",
+                  Deadline: deadline ? new Date(`${deadline}T12:00:00`).toISOString() : null,
+                  DeadlineBucket: deadline ? "Custom" : "No deadline",
+                  ExpectedLoad: load,
+                  Priority: priority,
+                  WhyImportant: why,
+                  ReminderPermission: reminder,
+                },
+                recipient || null,
+              );
               setTitle("");
               setWhy("");
               setDeadline("");
               setRecipient("");
               setOrganised(false);
-              toast(t("Organised package created.", "已新增整理好的包裹。"));
+              toast(t("Organised package created.", "已建立整理好的包裹。"));
             }}
           >
-            {t("Create package", "建立包裹")}
+            {t("Create package", "新增包裹")}
           </Button>
         </div>
       ) : null}
 
       {holding.length ? (
         <section className="mt-6">
-          <h3 className="font-display text-lg font-bold">{t("Holding notes", "待整理筆記")}</h3>
+          <h3 className="font-display text-lg font-bold">{t("Holding notes", "暫存筆記")}</h3>
           <div className="mt-2 space-y-3">
             {holding.map((note) => (
               <HoldingNote key={note.DumpID} note={note} />
@@ -244,17 +266,17 @@ function LandingPatch() {
       ) : null}
 
       <div className="mt-6">
-        <CharacterSays id="bulu" tone="accent">
+        <CharacterSays id="riedan" tone="accent">
           {t(
             `Control Tower: ${inbox.length} unsorted package${inbox.length === 1 ? " is" : "s are"} waiting.`,
-            `控制塔：有 ${inbox.length} 個未分類包裹等候中。`,
+            `阿笛留意到目前有 ${inbox.length} 個包裹等待整理。`,
           )}
         </CharacterSays>
       </div>
 
       {pings.map((ping) => (
         <div key={ping.PingID} className="mt-3 rounded-3xl bg-card p-3 ring-1 ring-border">
-          <CharacterSays id="bulu">🎙 {ping.Message}</CharacterSays>
+          <CharacterSays id="riedan">📣 {ping.Message}</CharacterSays>
           <div className="mt-2 flex gap-2">
             <Button
               className="h-12 flex-1 rounded-2xl"

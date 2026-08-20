@@ -12,13 +12,13 @@ import { Input } from "@/components/ui/input";
 export const Route = createFileRoute("/harvest")({
   head: () => ({
     meta: [
-      { title: "Harvest — Elster's Persimmon Factory" },
+      { title: "Harvest — Elster's Persimmon Warehouse" },
       {
         name: "description",
         content:
           "Celebrate shipped packages, earn persimmons for executive-function progress and send appreciation.",
       },
-      { property: "og:title", content: "Harvest — Elster's Persimmon Factory" },
+      { property: "og:title", content: "Harvest — Elster's Persimmon Warehouse" },
       {
         property: "og:description",
         content: "Persimmons reward progress and communication, not moral worth.",
@@ -58,7 +58,7 @@ function Harvest() {
         <p className="text-5xl">🍊</p>
         <p className="mt-2 font-display text-3xl font-bold">{balance}</p>
         <p className="text-sm text-muted-foreground">
-          {t("persimmons in the barn", "倉庫裡的柿子")}
+          {t("persimmons in the warehouse", "倉庫裡的柿子")}
         </p>
       </div>
 
@@ -82,7 +82,7 @@ function Harvest() {
 
       <h2 className="mb-2 mt-6 font-display text-base font-bold">{t("Send", "送出")} 🍊</h2>
       <div className="rounded-3xl bg-card p-4 ring-1 ring-border">
-        <CharacterSays id="nuffel">
+        <CharacterSays id="dulcie">
           {t(
             "Appreciation is different from completion. One persimmon, one honest note.",
             "欣賞與完成不同。一個柿子，一句真誠說話。",
@@ -142,7 +142,7 @@ function Harvest() {
                   >
                     {assignment.ReminderPermission === "None"
                       ? t("Reminders off", "提醒已關閉")
-                      : t("🎙 Bulu ping (1 🍊)", "🎙 Bulu 提醒（1 🍊）")}
+                      : t("📣 Riedan ping (1 🍊)", "📣 阿笛提醒（1 🍊）")}
                   </Button>
                 </li>
               );
