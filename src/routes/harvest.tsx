@@ -5,23 +5,23 @@ import { AppShell } from "@/components/pf/AppShell";
 import { CharacterSays } from "@/components/pf/Character";
 import { Chip } from "@/components/pf/Bits";
 import { usePF, balanceOf } from "@/lib/pf/store";
+import { uiLabel, useI18n } from "@/lib/pf/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/harvest")({
   head: () => ({
     meta: [
-      { title: "Harvest — Elster's Persimmon Factory" },
+      { title: "Harvest — Elster's Persimmon Warehouse" },
       {
         name: "description",
         content:
           "Celebrate shipped packages, earn persimmons for executive-function progress and send appreciation.",
       },
-      { property: "og:title", content: "Harvest — Elster's Persimmon Factory" },
+      { property: "og:title", content: "Harvest — Elster's Persimmon Warehouse" },
       {
         property: "og:description",
-        content:
-          "Persimmons reward progress and communication, not moral worth.",
+        content: "Persimmons reward progress and communication, not moral worth.",
       },
     ],
   }),
@@ -29,27 +29,37 @@ export const Route = createFileRoute("/harvest")({
 });
 
 function Harvest() {
-  const { db, me, myTasks, sendPersimmon, peopleIShareWith, buluPing, reset } =
-    usePF();
+  const { db, me, myTasks, sendPersimmon, peopleIShareWith, buluPing, reset } = usePF();
+  const { t, zh } = useI18n();
   const balance = balanceOf(db, me.UserID);
   const done = myTasks()
     .filter((t) => t.Status === "Done")
     .sort((a, b) => (b.CompletedAt ?? "").localeCompare(a.CompletedAt ?? ""));
-  const events = db.persimmons
-    .filter((p) => p.ToUser === me.UserID)
-    .slice(0, 12);
+  const events = db.persimmons.filter((p) => p.ToUser === me.UserID).slice(0, 12);
   const people = peopleIShareWith();
   const [note, setNote] = useState("I noticed how much work that took.");
 
   // packages I requested from someone else, so I can ping / appreciate
-  const requested = db.tasks.filter((t) => t.RequestedByUser === me.UserID);
+  const requested = db.assignments
+    .filter(
+      (assignment) =>
+        assignment.RequesterUser === me.UserID &&
+        !["rejected", "completed"].includes(assignment.State),
+    )
+    .map((assignment) => ({
+      assignment,
+      task: db.tasks.find((task) => task.TaskID === assignment.TaskID),
+    }))
+    .filter((item) => item.task);
 
   return (
     <AppShell>
       <div className="rounded-3xl bg-card p-5 text-center ring-1 ring-border">
         <p className="text-5xl">🍊</p>
         <p className="mt-2 font-display text-3xl font-bold">{balance}</p>
-        <p className="text-sm text-muted-foreground">persimmons in the barn</p>
+        <p className="text-sm text-muted-foreground">
+          {t("persimmons in the warehouse", "倉庫裡的柿子")}
+        </p>
       </div>
 
       <div className="mt-4">
@@ -61,20 +71,22 @@ function Harvest() {
       </div>
 
       <h2 className="mb-2 mt-6 font-display text-base font-bold">
-        Persimmons are earned for
+        {t("Persimmons are earned for", "以下行動可獲得柿子")}
       </h2>
       <p className="rounded-3xl bg-secondary/60 p-3 text-xs leading-relaxed">
-        Completing tasks · finishing a hard subtask · starting something avoided ·
-        marking a blocker honestly · asking for help · updating someone · helping
-        somebody · acknowledging someone's work. Base completion 1 🍊 + expected
-        load (max 6 🍊).
+        {t(
+          "Completing tasks · finishing a hard subtask · starting something avoided · marking a blocker honestly · asking for help · updating someone · helping somebody · acknowledging someone's work. Base completion 1 🍊 + expected load (max 6 🍊).",
+          "完成任務 · 完成困難步驟 · 開始一直逃避的事情 · 如實標記阻礙 · 求助 · 更新他人 · 幫助他人 · 肯定別人的努力。完成基礎獎勵 1 🍊 加預計負荷（最多 6 🍊）。",
+        )}
       </p>
 
-      <h2 className="mb-2 mt-6 font-display text-base font-bold">Send 🍊</h2>
+      <h2 className="mb-2 mt-6 font-display text-base font-bold">{t("Send", "送出")} 🍊</h2>
       <div className="rounded-3xl bg-card p-4 ring-1 ring-border">
-        <CharacterSays id="nuffel">
-          Appreciation is different from completion. One persimmon, one honest
-          note.
+        <CharacterSays id="dulcie">
+          {t(
+            "Appreciation is different from completion. One persimmon, one honest note.",
+            "欣賞與完成不同。一個柿子，一句真誠說話。",
+          )}
         </CharacterSays>
         <Input
           value={note}
@@ -103,29 +115,34 @@ function Harvest() {
       {requested.length ? (
         <>
           <h2 className="mb-2 mt-6 font-display text-base font-bold">
-            Packages I asked for
+            {t("Packages I asked for", "我提出的包裹請求")}
           </h2>
           <ul className="space-y-2">
-            {requested.map((t) => {
-              const owner = db.users.find((u) => u.UserID === t.OwnerUser)!;
+            {requested.map(({ assignment, task: taskMaybe }) => {
+              const task = taskMaybe!;
+              const recipient = db.users.find((user) => user.UserID === assignment.RecipientUser)!;
               return (
                 <li
-                  key={t.TaskID}
+                  key={assignment.AssignmentID}
                   className="rounded-3xl bg-card p-3 ring-1 ring-border"
                 >
-                  <p className="font-semibold">{t.Title}</p>
+                  <p className="font-semibold">{task.Title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {owner.DisplayName} · {t.AssignmentResponse || t.Status}
+                    {recipient.DisplayName} · {uiLabel(assignment.State, zh)} ·{" "}
+                    {t("reminders", "提醒")}：{uiLabel(assignment.ReminderPermission, zh)}
                   </p>
                   <Button
                     variant="secondary"
                     className="mt-2 h-12 w-full rounded-2xl"
+                    disabled={assignment.ReminderPermission === "None"}
                     onClick={() => {
-                      const r = buluPing(t.TaskID);
+                      const r = buluPing(task.TaskID);
                       toast(r.message);
                     }}
                   >
-                    🎙 Bulu ping (1 🍊, max one per day)
+                    {assignment.ReminderPermission === "None"
+                      ? t("Reminders off", "提醒已關閉")
+                      : t("📣 Riedan ping (1 🍊)", "📣 阿笛提醒（1 🍊）")}
                   </Button>
                 </li>
               );
@@ -134,7 +151,7 @@ function Harvest() {
         </>
       ) : null}
 
-      <h2 className="mb-2 mt-6 font-display text-base font-bold">Harvest log</h2>
+      <h2 className="mb-2 mt-6 font-display text-base font-bold">{t("Harvest log", "收成紀錄")}</h2>
       <ul className="space-y-2">
         {events.map((e) => (
           <li
@@ -161,11 +178,20 @@ function Harvest() {
         variant="ghost"
         className="mt-6 h-12 w-full rounded-2xl text-xs text-muted-foreground"
         onClick={() => {
+          if (
+            !window.confirm(
+              t(
+                "Reset all browser demo data? This cannot be undone.",
+                "重設所有瀏覽器示範資料？此操作無法復原。",
+              ),
+            )
+          )
+            return;
           reset();
-          toast("Demo factory reset.");
+          toast(t("Demo factory reset.", "示範工廠已重設。"));
         }}
       >
-        Reset demo data
+        {t("Reset demo data", "重設示範資料")}
       </Button>
     </AppShell>
   );

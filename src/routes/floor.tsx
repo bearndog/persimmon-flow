@@ -2,23 +2,24 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AppShell } from "@/components/pf/AppShell";
-import { CharacterSays } from "@/components/pf/Character";
+import { CharacterAvatar, CharacterSays } from "@/components/pf/Character";
 import { Chip, LoadDot, Scale } from "@/components/pf/Bits";
 import { TaskCard } from "@/components/pf/TaskCard";
 import { usePF, calculatedLoad, viewTask } from "@/lib/pf/store";
-import type { AssignmentResponse, Mood, Task } from "@/lib/pf/types";
+import { moodLabel, relativeTime, uiLabel, useI18n } from "@/lib/pf/i18n";
+import type { Mood, Task } from "@/lib/pf/types";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/floor")({
   head: () => ({
     meta: [
-      { title: "Factory Floor — Elster's Persimmon Factory" },
+      { title: "Warehouse Floor — Elster's Persimmon Warehouse" },
       {
         name: "description",
         content:
           "See your own workload and the capacity of the people you share with, without exposing private details.",
       },
-      { property: "og:title", content: "Factory Floor — Elster's Persimmon Factory" },
+      { property: "og:title", content: "Warehouse Floor — Elster's Persimmon Warehouse" },
       {
         property: "og:description",
         content:
@@ -30,11 +31,11 @@ export const Route = createFileRoute("/floor")({
 });
 
 const MOODS: { mood: Mood; character: string; blurb: string }[] = [
-  { mood: "Neuna / overwhelmed", character: "neuna", blurb: "Overwhelmed, overstimulated" },
-  { mood: "Teddi / exhausted", character: "teddi", blurb: "Exhausted, shutdown" },
+  { mood: "Tottie / boundaries", character: "tottie", blurb: "Overwhelmed, need boundaries" },
+  { mood: "Teddi / exhausted", character: "falco", blurb: "Exhausted, need gentleness" },
   { mood: "Elster / focused", character: "elster", blurb: "Focused, doing things" },
   { mood: "Goldie / energetic", character: "goldie", blurb: "Energetic, novelty-seeking" },
-  { mood: "Fine", character: "bulu", blurb: "Normal" },
+  { mood: "Fine", character: "riedan", blurb: "Steady / connected" },
 ];
 
 const FILTERS = [
@@ -47,65 +48,82 @@ const FILTERS = [
   "Waiting for Someone",
 ] as const;
 
-const RESPONSES: AssignmentResponse[] = [
-  "📥 Received",
-  "💤 Later / Low Capacity",
-  "❓ Need Clarification",
-  "🚫 Can't Take This",
-  "▶️ In Progress",
-  "✅ Done",
-];
-
 function FactoryFloor() {
-  const { db, me, myTasks, checkIn, updateTask, peopleIShareWith } = usePF();
+  const { db, me, myTasks, checkIn } = usePF();
+  const { t, zh } = useI18n();
   const [view, setView] = useState<"mine" | "people">("mine");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [projectFilter, setProjectFilter] = useState("all");
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [mood, setMood] = useState<Mood>(me.CurrentMood);
   const [load, setLoad] = useState<number>(me.CurrentLoad ?? calculatedLoad(db, me.UserID));
   const [help, setHelp] = useState(me.HelpNeeded);
+  const [showEverything, setShowEverything] = useState(false);
 
   const calc = calculatedLoad(db, me.UserID);
-  const open = myTasks().filter((t) => t.Status !== "Done");
-  const filtered = applyFilter(open, filter).sort(byMood(me.CurrentMood));
+  const open = Array.from(new Map(myTasks().map((task) => [task.TaskID, task])).values()).filter(
+    (task) =>
+      task.Status !== "Inbox" && task.Status !== "Done" && task.Status !== "Split into packages",
+  );
+  const projectFiltered = open.filter(
+    (task) => projectFilter === "all" || (task.ProjectID ?? "none") === projectFilter,
+  );
+  const filtered = applyFilter(projectFiltered, filter).sort(byMood(me.CurrentMood));
+  const projects = db.projects.filter(
+    (project) => project.OwnerUser === me.UserID && !project.ArchivedAt,
+  );
   const moodView = moodConfig(me.CurrentMood);
-  const shown = moodView.limit ? filtered.slice(0, moodView.limit) : filtered;
-  const assigned = myTasks().filter((t) => t.RequestedByUser && t.Status !== "Done");
+  const shown = moodView.limit && !showEverything ? filtered.slice(0, moodView.limit) : filtered;
 
   return (
     <AppShell>
-      {/* Bulu check-in */}
+      {/* Character-led check-in */}
       <div className="rounded-3xl bg-card p-4 ring-1 ring-border">
-        <CharacterSays id="bulu">How is the factory running?</CharacterSays>
+        <CharacterSays id="riedan">
+          {t("How are you arriving at the warehouse today?", "你今天來到倉庫時，感覺如何？")}
+        </CharacterSays>
         {!checkInOpen ? (
           <Button
             className="mt-3 h-12 w-full rounded-2xl"
             variant="secondary"
             onClick={() => setCheckInOpen(true)}
           >
-            Check in ({me.CurrentMood} · load {me.CurrentLoad ?? calc}/5)
+            {t("Check in", "狀態登記")} ({moodLabel(me.CurrentMood, zh)} · {t("load", "負荷")}{" "}
+            {me.CurrentLoad ?? calc}/5)
           </Button>
         ) : (
           <div className="mt-3 space-y-4">
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {MOODS.map((m) => (
-                <Chip key={m.mood} active={mood === m.mood} onClick={() => setMood(m.mood)}>
-                  {m.mood} — {m.blurb}
-                </Chip>
+                <button
+                  type="button"
+                  key={m.mood}
+                  onClick={() => setMood(m.mood)}
+                  className={`rounded-3xl p-3 text-center ring-2 transition ${mood === m.mood ? "bg-accent ring-primary" : "bg-background ring-border"}`}
+                >
+                  <CharacterAvatar id={m.character} size="lg" className="mx-auto" />
+                  <span className="mt-2 block text-sm font-semibold">{moodLabel(m.mood, zh)}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {zh ? moodBlurbZh(m.character) : m.blurb}
+                  </span>
+                </button>
               ))}
             </div>
             <Scale
-              label="Current load"
-              hint={`The factory calculates ${calc}/5 from your open packages. You may override it.`}
+              label={t("Current load", "目前負荷")}
+              hint={t(
+                `The factory calculates ${calc}/5 from your open packages. You may override it.`,
+                `工廠按未完成包裹估算為 ${calc}/5，你可以自行調整。`,
+              )}
               value={load}
               onChange={setLoad}
             />
             <div className="flex gap-2">
               <Chip active={help} onClick={() => setHelp(true)}>
-                Need help? Yes
+                {t("Need help? Yes", "需要協助？是")}
               </Chip>
               <Chip active={!help} onClick={() => setHelp(false)}>
-                No
+                {t("No", "否")}
               </Chip>
             </div>
             <Button
@@ -113,10 +131,15 @@ function FactoryFloor() {
               onClick={() => {
                 checkIn(mood, load, help);
                 setCheckInOpen(false);
-                toast("Check-in logged. The floor has been adjusted.");
+                toast(
+                  t(
+                    "Check-in logged. The floor has been adjusted.",
+                    "狀態已記錄，工廠樓層已調整。",
+                  ),
+                );
               }}
             >
-              Save check-in
+              {t("Save check-in", "儲存狀態")}
             </Button>
           </div>
         )}
@@ -124,10 +147,10 @@ function FactoryFloor() {
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <Chip active={view === "mine"} onClick={() => setView("mine")}>
-          My Factory
+          {t("My Factory", "我的工廠")}
         </Chip>
         <Chip active={view === "people"} onClick={() => setView("people")}>
-          People I Share With
+          {t("People I Share With", "與我共享的人")}
         </Chip>
       </div>
 
@@ -135,64 +158,65 @@ function FactoryFloor() {
         <>
           <div className="mt-4">
             <CharacterSays id={moodView.character} tone="accent">
-              {moodView.message}
+              {zh ? moodView.messageZh : moodView.message}
             </CharacterSays>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
             {FILTERS.map((f) => (
               <Chip key={f} active={filter === f} onClick={() => setFilter(f)}>
-                {f}
+                {filterLabel(f, zh)}
               </Chip>
             ))}
+            {filter !== "All" ? (
+              <Chip onClick={() => setFilter("All")}>{t("Clear filter", "清除篩選")}</Chip>
+            ) : null}
           </div>
 
-          {assigned.length ? (
-            <div className="mt-4 space-y-2">
-              <h2 className="font-display text-base font-bold">
-                Requested by someone else
-              </h2>
-              {assigned.map((t) => {
-                const from = db.users.find((u) => u.UserID === t.RequestedByUser);
-                return (
-                  <div key={t.TaskID} className="rounded-3xl bg-card p-3 ring-1 ring-border">
-                    <p className="font-semibold">{t.Title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      From {from?.DisplayName} · load {t.ExpectedLoad}/5
-                      {t.Deadline ? ` · by ${new Date(t.Deadline).toLocaleDateString()}` : ""}
-                    </p>
-                    {t.WhyImportant ? (
-                      <p className="mt-2 rounded-2xl bg-secondary/60 p-2 text-xs">
-                        Why it matters to them: “{t.WhyImportant}”
-                      </p>
-                    ) : null}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {RESPONSES.filter(Boolean).map((r) => (
-                        <Chip
-                          key={r}
-                          active={t.AssignmentResponse === r}
-                          onClick={() => updateTask(t.TaskID, { AssignmentResponse: r })}
-                        >
-                          {r}
-                        </Chip>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[11px] text-muted-foreground">
-                      “Received” is different from “I can do it now”. Both are honest.
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
+          <label className="mt-3 block text-sm font-semibold">
+            {t("Project", "項目")}
+            <select
+              className="mt-1 h-11 w-full rounded-xl border bg-card px-3"
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+            >
+              <option value="all">{t("All projects", "所有項目")}</option>
+              <option value="none">{t("No project", "未加入項目")}</option>
+              {projects.map((project) => (
+                <option key={project.ProjectID} value={project.ProjectID}>
+                  {project.Name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {t(
+                `${filtered.length} matching package${filtered.length === 1 ? "" : "s"}`,
+                `${filtered.length} 個符合的包裹`,
+              )}
+            </span>
+            {moodView.limit ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowEverything((value) => !value)}
+              >
+                {showEverything
+                  ? t("Use mode view", "使用模式檢視")
+                  : t("Show everything anyway", "仍然顯示全部")}
+              </Button>
+            ) : null}
+          </div>
 
           <div className="mt-4 space-y-4">
             {shown.map((t) => (
-              <TaskCard key={t.TaskID} task={t} />
+              <TaskCard key={t.TaskID} task={t} context="floor" />
             ))}
             {!shown.length ? (
               <p className="rounded-3xl bg-card p-6 text-center text-sm text-muted-foreground ring-1 ring-border">
-                Nothing in this filter.
+                {t("Nothing in this filter.", "此篩選沒有包裹。")}
               </p>
             ) : null}
           </div>
@@ -206,30 +230,37 @@ function FactoryFloor() {
 
 function PeopleView() {
   const { peopleIShareWith, db } = usePF();
+  const { t, zh } = useI18n();
   const people = peopleIShareWith();
   return (
     <div className="mt-4 space-y-3">
       <p className="rounded-3xl bg-secondary/60 p-3 text-xs">
-        Only people with an explicit, active connection appear here. Nobody can
-        discover anyone else through you — there is no directory.
+        {t(
+          "Only people with an explicit, active connection appear here. There is no public directory.",
+          "只有已有明確連結的人會在這裡出現；沒有公開用戶目錄。",
+        )}
       </p>
       {people.map((p) => (
         <div key={p.user.UserID} className="rounded-3xl bg-card p-4 ring-1 ring-border">
           <div className="flex items-center justify-between">
-            <h3 className="font-display text-lg font-bold uppercase">
-              {p.user.DisplayName}
-            </h3>
+            <h3 className="font-display text-lg font-bold uppercase">{p.user.DisplayName}</h3>
             <span className="text-xs text-muted-foreground">{p.label}</span>
           </div>
           <p className="mt-1 flex items-center gap-2 text-sm font-semibold">
-            <LoadDot value={p.load} /> Current Load: {p.load}/5
-            {p.user.HelpNeeded ? " · asked for help" : ""}
+            <LoadDot value={p.load} /> {t("Current load", "目前負荷")}：{p.load}/5
+            {p.user.HelpNeeded ? t(" · asked for help", " · 已提出協助請求") : ""}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {moodLabel(p.user.CurrentMood, zh)}
+            {p.user.LastCheckIn
+              ? ` · ${t("checked in", "登記於")} ${relativeTime(p.user.LastCheckIn, zh)}`
+              : ""}
           </p>
           <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-            <Stat label="Active shipments" value={p.active} />
-            <Stat label="Urgent" value={p.urgent} />
-            <Stat label="Blocked" value={p.blocked} />
-            <Stat label="Hidden background work" value={p.hidden} />
+            <Stat label={t("Active shipments", "進行中包裹")} value={p.active} />
+            <Stat label={t("Urgent", "緊急")} value={p.urgent} />
+            <Stat label={t("Blocked", "受阻")} value={p.blocked} />
+            <Stat label={t("Hidden background work", "隱藏背景工作")} value={p.hidden} />
           </dl>
           <ul className="mt-3 space-y-2">
             {db.tasks
@@ -243,7 +274,7 @@ function PeopleView() {
       ))}
       {!people.length ? (
         <p className="rounded-3xl bg-card p-6 text-center text-sm text-muted-foreground ring-1 ring-border">
-          No active connections.
+          {t("No active connections.", "沒有有效連結。")}
         </p>
       ) : null}
     </div>
@@ -252,27 +283,26 @@ function PeopleView() {
 
 function VisibleRow({ task }: { task: Task }) {
   const { db } = usePF();
+  const { t, zh } = useI18n();
   const v = viewTask(db, task, db.currentUserId);
   if (!v) return null;
   return (
     <li className="rounded-2xl bg-secondary/50 p-3 text-sm">
       {v.redacted ? (
         <>
-          <p className="font-semibold">🔒 Private background task</p>
+          <p className="font-semibold">🔒 {t("Private background task", "私人背景任務")}</p>
           <p className="text-xs text-muted-foreground">
-            Load {v.ExpectedLoad}/5 · {v.Status} · {v.Progress}%
+            {t("Load", "負荷")} {v.ExpectedLoad}/5 · {uiLabel(v.Status, zh)} · {v.Progress}%
           </p>
         </>
       ) : (
         <>
           <p className="font-semibold">{v.Title}</p>
           <p className="text-xs text-muted-foreground">
-            Load {v.ExpectedLoad}/5 · {v.Status} · {v.Progress}%
+            {t("Load", "負荷")} {v.ExpectedLoad}/5 · {uiLabel(v.Status, zh)} · {v.Progress}%
             {v.Deadline ? ` · by ${new Date(v.Deadline).toLocaleDateString()}` : ""}
           </p>
-          {v.WhyImportant ? (
-            <p className="mt-1 text-xs">“{v.WhyImportant}”</p>
-          ) : null}
+          {v.WhyImportant ? <p className="mt-1 text-xs">“{v.WhyImportant}”</p> : null}
         </>
       )}
     </li>
@@ -312,48 +342,80 @@ function applyFilter(tasks: Task[], filter: string) {
   }
 }
 
+function filterLabel(filter: (typeof FILTERS)[number], zh: boolean) {
+  if (!zh) return filter;
+  const labels: Record<(typeof FILTERS)[number], string> = {
+    All: "全部",
+    Today: "今天",
+    Urgent: "緊急",
+    "High priority": "高優先",
+    "Quick / low load": "快速／低負荷",
+    Blocked: "受阻",
+    "Waiting for Someone": "等待他人",
+  };
+  return labels[filter];
+}
+
 function byMood(mood: Mood) {
   return (a: Task, b: Task) => {
     if (mood === "Teddi / exhausted") return a.ExpectedLoad - b.ExpectedLoad;
-    if (mood === "Neuna / overwhelmed")
+    if (mood === "Neuna / overwhelmed" || mood === "Tottie / boundaries")
       return b.Priority - a.Priority || a.ExpectedLoad - b.ExpectedLoad;
     if (mood === "Goldie / energetic")
       return Number(b.Interesting) - Number(a.Interesting) || b.Priority - a.Priority;
     // Elster / Fine: priority then deadline
-    return (
-      b.Priority - a.Priority ||
-      (a.Deadline ?? "9999").localeCompare(b.Deadline ?? "9999")
-    );
+    return b.Priority - a.Priority || (a.Deadline ?? "9999").localeCompare(b.Deadline ?? "9999");
   };
 }
 
 function moodConfig(mood: Mood) {
   switch (mood) {
+    case "Tottie / boundaries":
     case "Neuna / overwhelmed":
       return {
-        character: "neuna",
+        character: "tottie",
         message: "Too much input. Let's reduce the field.",
+        messageZh: "資訊太多了，先縮小範圍。",
         limit: 3,
       };
     case "Teddi / exhausted":
       return {
-        character: "teddi",
+        character: "falco",
         message: "Minimum viable worker mode. One tiny action is enough.",
+        messageZh: "最低可行工作模式，一個微小行動已足夠。",
         limit: 1,
       };
     case "Elster / focused":
-      return { character: "elster", message: "Factory operational.", limit: 0 };
+      return {
+        character: "elster",
+        message: "Factory operational.",
+        messageZh: "工廠運作正常。",
+        limit: 0,
+      };
     case "Goldie / energetic":
       return {
         character: "goldie",
         message: "Use the energy while it exists.",
+        messageZh: "趁能量還在，好好運用它。",
         limit: 0,
       };
     default:
       return {
-        character: "bulu",
+        character: "riedan",
         message: "Steady line today. Suggestions only, never restrictions.",
+        messageZh: "今天運作平穩；模式只是建議，不是限制。",
         limit: 0,
       };
   }
+}
+
+function moodBlurbZh(character: string) {
+  const labels: Record<string, string> = {
+    tottie: "覺得混亂，需要界線",
+    falco: "精疲力竭，需要溫柔對待",
+    elster: "專注，準備行動",
+    goldie: "精力充沛，想找新鮮感",
+    riedan: "平穩，保持連結",
+  };
+  return labels[character] ?? "";
 }

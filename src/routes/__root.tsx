@@ -82,13 +82,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         name: "viewport",
         content: "width=device-width, initial-scale=1, viewport-fit=cover",
       },
-      { title: "Elster's Persimmon Factory 柿務總管工廠" },
+      { title: "Elster's Persimmon Warehouse 依斯特的柿子倉庫" },
       {
         name: "description",
         content:
           "A playful shared task app for brain dumping, breaking tasks down and seeing invisible workload without losing privacy.",
       },
-      { name: "author", content: "Elster's Persimmon Factory" },
+      { name: "author", content: "Elster's Persimmon Warehouse" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

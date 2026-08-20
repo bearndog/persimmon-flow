@@ -74,7 +74,5 @@ export function LoadDot({ value }: { value: number }) {
 }
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="mb-2 mt-6 font-display text-base font-bold">{children}</h2>
-  );
+  return <h2 className="mb-2 mt-6 font-display text-base font-bold">{children}</h2>;
 }

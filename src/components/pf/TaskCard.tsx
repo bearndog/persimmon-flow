@@ -1,22 +1,22 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { usePF, progressOf } from "@/lib/pf/store";
+import { uiLabel, useI18n } from "@/lib/pf/i18n";
 import type {
+  AssignmentResponse,
   BlockerType,
+  DetailLevel,
   ReminderPermission,
   SupportType,
   Task,
   Visibility,
-  DetailLevel,
-  Status,
 } from "@/lib/pf/types";
 import { CharacterAvatar, CharacterSays } from "./Character";
-import { Chip, Scale } from "./Bits";
+import { Chip } from "./Bits";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
 
 const BLOCKERS: BlockerType[] = [
   "I don't know where to start",
@@ -27,7 +27,6 @@ const BLOCKERS: BlockerType[] = [
   "I'm waiting for someone",
   "Other",
 ];
-
 const SUPPORT: SupportType[] = [
   "Practical help",
   "Body doubling",
@@ -37,247 +36,454 @@ const SUPPORT: SupportType[] = [
   "Just acknowledge me",
   "Give me space",
 ];
-
-const STATUSES: Status[] = [
-  "Inbox",
-  "Sorted",
-  "In Progress",
-  "Blocked",
-  "Waiting for Someone",
-  "Done",
+const RESPONSES: AssignmentResponse[] = [
+  "📥 Received",
+  "💤 Later / Low Capacity",
+  "❓ Need Clarification",
+  "🚫 Can't Take This",
+  "▶️ In Progress",
+  "✅ Done",
 ];
 
-export function TaskCard({ task }: { task: Task }) {
+export function TaskCard({
+  task,
+  context = "floor",
+}: {
+  task: Task;
+  context?: "sorting" | "floor";
+}) {
   const {
     db,
+    me,
     updateTask,
     stepsOf,
     addStep,
     toggleStep,
     completeTask,
+    splitTask,
+    convertStepsToTasks,
+    applyBreakdownChoice,
+    resolveSpiral,
+    handoffSorting,
     requestSupport,
+    assignmentForTask,
+    respondToAssignment,
   } = usePF();
-  const [tool, setTool] = useState<"" | "break" | "spiral" | "support" | "bulu">("");
+  const { t, zh } = useI18n();
+  const [tool, setTool] = useState<"" | "break" | "spiral" | "support" | "riedan">("");
+  const [breakMode, setBreakMode] = useState<"checklist" | "packages">("checklist");
   const [stepText, setStepText] = useState("");
+  const [splitText, setSplitText] = useState("");
   const [fact, setFact] = useState("");
   const [next, setNext] = useState("");
   const [park, setPark] = useState(task.ParkedThoughts);
+  const [supportType, setSupportType] = useState<SupportType>("Practical help");
+  const [helper, setHelper] = useState("");
+  const [supportDetails, setSupportDetails] = useState("");
+  const [supportTime, setSupportTime] = useState("");
+  const [clarification, setClarification] = useState("");
+  const [draftResponse, setDraftResponse] = useState<AssignmentResponse | "">(
+    task.AssignmentResponse || "",
+  );
 
   const steps = stepsOf(task.TaskID);
-  const firstOpen = steps.find((s) => !s.IsDone);
+  const firstOpen = steps.find((step) => !step.IsDone);
   const progress = progressOf(db, task);
-  const requester = db.users.find((u) => u.UserID === task.RequestedByUser);
+  const assignment = assignmentForTask(task.TaskID);
+  const requester = assignment
+    ? db.users.find((user) => user.UserID === assignment.RequesterUser)
+    : db.users.find((user) => user.UserID === task.RequestedByUser);
+  const isRecipient = assignment?.RecipientUser === me.UserID;
+  const canRespond =
+    isRecipient && assignment && !["rejected", "completed"].includes(assignment.State);
+  const project = db.projects.find((item) => item.ProjectID === task.ProjectID);
+  const category = db.categories.find((item) => item.CategoryID === task.CategoryID);
+  const helpers = db.connections
+    .filter((connection) => connection.Active && connection.ViewerUser === me.UserID)
+    .map((connection) => db.users.find((user) => user.UserID === connection.OwnerUser)!)
+    .filter(Boolean);
+
+  function finish() {
+    const unfinished = steps.filter((step) => !step.IsDone).length;
+    if (
+      unfinished &&
+      !window.confirm(
+        t(
+          `${unfinished} checklist step(s) are unfinished. Ship anyway?`,
+          `仍有 ${unfinished} 個清單步驟未完成。仍要出貨嗎？`,
+        ),
+      )
+    )
+      return;
+    const { persimmons } = completeTask(task.TaskID);
+    toast(t(`Package shipped. +${persimmons} 🍊`, `包裹已出貨。+${persimmons} 🍊`));
+  }
+
+  if (db.layoutMode === "simple" && context === "floor") {
+    return (
+      <SimpleTaskCard
+        task={task}
+        progress={progress}
+        onUpdate={(patch) => updateTask(task.TaskID, patch)}
+        onFinish={finish}
+      />
+    );
+  }
 
   return (
     <article className="rounded-3xl bg-card p-4 ring-1 ring-border">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-display text-lg font-bold leading-snug">
-            {task.Title}
-          </h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {task.Status} · load {task.ExpectedLoad}/5 · priority {task.Priority}/5
-            {task.Category ? ` · ${task.Category}` : ""}
-          </p>
+          <h3 className="font-display text-lg font-bold leading-snug">{task.Title}</h3>
+          {context === "floor" ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {uiLabel(task.Status, zh)} · {t("load", "負荷")} {task.ExpectedLoad}/5 ·{" "}
+              {t("priority", "優先")} {task.Priority}/5
+              {project ? ` · ${project.Name}` : ""}
+              {category
+                ? ` / ${uiLabel(category.Name, zh)}`
+                : task.Category
+                  ? ` · ${uiLabel(task.Category, zh)}`
+                  : ""}
+            </p>
+          ) : null}
+          {task.ParentTaskID ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              ↳ {t("Split from another package", "由另一包裹拆分而來")}
+            </p>
+          ) : null}
         </div>
-        <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">
-          {progress}%
-        </span>
+        <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">{progress}%</span>
       </div>
-
       <Progress value={progress} className="mt-3 h-2" />
 
       {requester ? (
         <p className="mt-3 rounded-2xl bg-secondary/60 p-3 text-xs">
-          Requested by <strong>{requester.DisplayName}</strong>
-          {task.WhyImportant ? (
-            <>
-              {" "}
-              — “{task.WhyImportant}”
-            </>
-          ) : null}
+          {t("Requested by", "請求人")} <strong>{requester.DisplayName}</strong>
+          {task.WhyImportant ? <> — “{task.WhyImportant}”</> : null}
         </p>
       ) : task.WhyImportant ? (
         <p className="mt-3 rounded-2xl bg-secondary/60 p-3 text-xs">
-          Why it matters: “{task.WhyImportant}”
+          {t("Why it matters", "重要原因")}：“{task.WhyImportant}”
         </p>
+      ) : null}
+
+      {canRespond && assignment ? (
+        <div className="mt-3 rounded-3xl bg-accent p-3 ring-1 ring-border">
+          <p className="text-sm font-semibold">{t("Respond to this request", "回覆此請求")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("Reminders", "提醒")}：{uiLabel(assignment.ReminderPermission, zh)}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {RESPONSES.map((response) => (
+              <Chip
+                key={response}
+                active={draftResponse === response}
+                onClick={() => setDraftResponse(response)}
+              >
+                {uiLabel(response, zh)}
+              </Chip>
+            ))}
+          </div>
+          <Textarea
+            className="mt-2 min-h-20"
+            value={clarification}
+            onChange={(event) => setClarification(event.target.value)}
+            placeholder={t(
+              "Clarification question (required for Need Clarification)",
+              "澄清問題（選擇「需要澄清」時必填）",
+            )}
+          />
+          <Button
+            className="mt-2 w-full"
+            disabled={!draftResponse}
+            onClick={() => {
+              if (draftResponse === "❓ Need Clarification" && !clarification.trim()) {
+                toast(t("Write your question first.", "請先寫下想問的問題。"));
+                return;
+              }
+              const result = respondToAssignment(
+                assignment.AssignmentID,
+                draftResponse as AssignmentResponse,
+                clarification,
+              );
+              toast(t(result.message, result.ok ? "回覆已傳送。" : "請先寫下澄清問題。"));
+            }}
+          >
+            {t("Send response", "傳送回覆")}
+          </Button>
+        </div>
       ) : null}
 
       {firstOpen ? (
         <div className="mt-3 flex items-center gap-3 rounded-2xl bg-accent p-3">
-          <CharacterAvatar id="neuna" size="sm" />
+          <CharacterAvatar id="tottie" size="sm" />
           <div>
             <p className="text-[11px] font-semibold text-muted-foreground">
-              Next tiny action
+              {t("Next tiny action", "下一個微小行動")}
             </p>
             <p className="text-sm font-semibold">{firstOpen.StepText}</p>
           </div>
         </div>
       ) : null}
 
-      {task.SupportRequested.length ? (
-        <p className="mt-3 text-xs">
-          🐕 Support requested: {task.SupportRequested.join(", ")}
-        </p>
+      {context === "floor" ? (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Chip active={tool === "break"} onClick={() => setTool(tool === "break" ? "" : "break")}>
+            <CharacterAvatar id="tottie" size="sm" /> {t("Break this down", "拆細處理")}
+          </Chip>
+          <Chip
+            active={tool === "spiral"}
+            onClick={() => setTool(tool === "spiral" ? "" : "spiral")}
+          >
+            <CharacterAvatar id="tottie" size="sm" /> {t("Stop spiralling", "停止鑽牛角尖")}
+          </Chip>
+          <Chip
+            active={tool === "support"}
+            onClick={() => setTool(tool === "support" ? "" : "support")}
+          >
+            <CharacterAvatar id="dulcie" size="sm" /> {t("Ground support", "安心支援")}
+          </Chip>
+          <Chip
+            active={tool === "riedan"}
+            onClick={() => setTool(tool === "riedan" ? "" : "riedan")}
+          >
+            <CharacterAvatar id="riedan" size="sm" /> 📣 {t("Reminders", "提醒")}
+          </Chip>
+        </div>
       ) : null}
 
-      {/* tool toggles */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Chip active={tool === "break"} onClick={() => setTool(tool === "break" ? "" : "break")}>
-          🐈‍⬛ Break this down
-        </Chip>
-        <Chip active={tool === "spiral"} onClick={() => setTool(tool === "spiral" ? "" : "spiral")}>
-          🌀 Stop spiralling
-        </Chip>
-        <Chip active={tool === "support"} onClick={() => setTool(tool === "support" ? "" : "support")}>
-          🐕 Ask Nuffel
-        </Chip>
-        <Chip active={tool === "bulu"} onClick={() => setTool(tool === "bulu" ? "" : "bulu")}>
-          🐰 Reminders
-        </Chip>
-      </div>
-
       {tool === "break" ? (
-        <div className="mt-3 space-y-3 rounded-3xl bg-secondary/50 p-3">
-          <CharacterSays id="neuna">Ask Neuna to break this down.</CharacterSays>
+        <div className="mt-3 space-y-4 rounded-3xl bg-secondary/50 p-3">
+          <CharacterSays id="tottie">
+            {t(
+              "Choose one route: keep a checklist inside this package, or make separate packages.",
+              "請選一種方式：在這個包裹內建立清單，或拆成多個獨立包裹。",
+            )}
+          </CharacterSays>
           <div>
-            <p className="text-sm font-semibold">What's blocking you?</p>
+            <p className="text-sm font-semibold">{t("What's blocking you?", "有甚麼阻礙你？")}</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              {BLOCKERS.map((b) => (
+              {BLOCKERS.map((blocker) => (
                 <Chip
-                  key={b}
-                  active={task.BlockerType === b}
-                  onClick={() =>
-                    updateTask(task.TaskID, {
-                      BlockerType: task.BlockerType === b ? "" : b,
-                      Status:
-                        task.Status === "Inbox" ? "Sorted" : task.Status,
-                    })
-                  }
+                  key={blocker}
+                  active={task.BlockerType === blocker}
+                  onClick={() => setBreakMode(applyBreakdownChoice(task.TaskID, blocker))}
                 >
-                  {b}
+                  {uiLabel(blocker, zh)}
                 </Chip>
               ))}
             </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold">
-              What is the smallest physical action you could do in five minutes?
-            </p>
-            <ul className="mt-2 space-y-2">
-              {steps.map((s) => (
-                <li key={s.StepID}>
-                  <button
-                    type="button"
-                    onClick={() => toggleStep(s.StepID)}
-                    className="flex w-full items-center gap-3 rounded-2xl bg-card p-3 text-left text-sm ring-1 ring-border"
-                  >
-                    <span className="text-lg">{s.IsDone ? "✅" : "⬜️"}</span>
-                    <span className={s.IsDone ? "line-through opacity-60" : ""}>
-                      {s.StepText}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {steps.length < 5 ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Chip active={breakMode === "checklist"} onClick={() => setBreakMode("checklist")}>
+              {t("Checklist", "清單")}
+            </Chip>
+            <Chip active={breakMode === "packages"} onClick={() => setBreakMode("packages")}>
+              {t("Separate packages", "獨立包裹")}
+            </Chip>
+          </div>
+          {breakMode === "checklist" ? (
+            <div>
+              <p className="text-sm font-semibold">{t("Add checklist steps", "新增清單步驟")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  "Keep these as steps, or turn every unfinished step into its own package later.",
+                  "你可以保留為清單；之後如有需要，也可把每個未完成步驟變成獨立包裹。",
+                )}
+              </p>
+              <ul className="mt-2 space-y-2">
+                {steps.map((step) => (
+                  <li key={step.StepID}>
+                    <button
+                      type="button"
+                      onClick={() => toggleStep(step.StepID)}
+                      className="flex w-full items-center gap-3 rounded-2xl bg-card p-3 text-left text-sm ring-1 ring-border"
+                    >
+                      <span>{step.IsDone ? "✅" : "⬜️"}</span>
+                      <span className={step.IsDone ? "line-through opacity-60" : ""}>
+                        {step.StepText}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
               <div className="mt-2 flex gap-2">
                 <Input
                   value={stepText}
-                  onChange={(e) => setStepText(e.target.value)}
-                  placeholder="e.g. Find policy number"
-                  className="h-12 rounded-2xl bg-card"
+                  onChange={(event) => setStepText(event.target.value)}
+                  placeholder={t("Small physical action", "微小的實際行動")}
                 />
                 <Button
-                  className="h-12 rounded-2xl"
                   onClick={() => {
-                    if (!stepText.trim()) return;
-                    addStep(task.TaskID, stepText.trim());
-                    setStepText("");
+                    if (stepText.trim()) {
+                      addStep(task.TaskID, stepText.trim());
+                      setStepText("");
+                    }
                   }}
                 >
-                  Add
+                  {t("Add", "新增")}
                 </Button>
               </div>
-            ) : null}
-          </div>
+              {steps.some((step) => !step.IsDone) ? (
+                <Button
+                  className="mt-2 w-full"
+                  variant="secondary"
+                  onClick={() => {
+                    const count = convertStepsToTasks(task.TaskID);
+                    toast(t(`${count} separate packages created.`, `已建立 ${count} 個獨立包裹。`));
+                  }}
+                >
+                  {t("Turn unfinished steps into packages", "把未完成步驟變成獨立包裹")}
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-semibold">
+                {t("Split into separate packages", "拆成獨立包裹")}
+              </p>
+              <Textarea
+                value={splitText}
+                onChange={(event) => setSplitText(event.target.value)}
+                placeholder={t("One new package per line", "每行一個新包裹")}
+              />
+              <Button
+                className="mt-2 w-full"
+                variant="secondary"
+                onClick={() => {
+                  const count = splitTask(task.TaskID, splitText);
+                  if (count) {
+                    setSplitText("");
+                    toast(t(`${count} linked packages created.`, `已建立 ${count} 個相連包裹。`));
+                  }
+                }}
+              >
+                {t("Create separate packages", "建立獨立包裹")}
+              </Button>
+            </div>
+          )}
         </div>
       ) : null}
 
       {tool === "spiral" ? (
         <div className="mt-3 space-y-3 rounded-3xl bg-secondary/50 p-3">
-          <CharacterSays id="neuna">
-            Are we actually solving the task, or thinking about the task?
+          <CharacterSays id="tottie">
+            {t(
+              "Are we solving the task, or thinking about the task?",
+              "我們是在解決任務，還是在反覆想任務？",
+            )}
           </CharacterSays>
-          <Field label="FACT — what actually needs to happen?" value={fact} onChange={setFact} />
           <Field
-            label="NEXT — what can you physically do in five minutes?"
+            label={t("FACT — what needs to happen?", "事實－需要發生甚麼？")}
+            value={fact}
+            onChange={setFact}
+          />
+          <Field
+            label={t("NEXT — what can you do in five minutes?", "下一步－五分鐘內可做甚麼？")}
             value={next}
             onChange={setNext}
           />
           <Field
-            label="PARK — what does not need solving right now?"
+            label={t("PARK — what can wait?", "暫放－甚麼可以稍後處理？")}
             value={park}
             onChange={setPark}
           />
           <Button
-            className="h-12 w-full rounded-2xl"
+            className="w-full"
             onClick={() => {
-              updateTask(task.TaskID, { ParkedThoughts: park });
-              if (next.trim() && steps.length < 5) addStep(task.TaskID, next.trim());
-              toast("Neuna has confiscated these thoughts for later.");
+              resolveSpiral(task.TaskID, { fact, next, park });
+              setTool("");
+              toast(
+                t(
+                  "Tottie saved your next step and sent you an inbox note.",
+                  "托蒂已儲存下一步，並在收件匣留下一則訊息。",
+                ),
+              );
             }}
           >
-            Hand it to Neuna
+            {t("Hand it to Tottie", "交給托蒂")}
           </Button>
-          {task.ParkedThoughts ? (
-            <p className="rounded-2xl bg-card p-3 text-xs ring-1 ring-border">
-              Confiscated: “{task.ParkedThoughts}”
-            </p>
-          ) : null}
         </div>
       ) : null}
 
       {tool === "support" ? (
         <div className="mt-3 space-y-3 rounded-3xl bg-secondary/50 p-3">
-          <CharacterSays id="nuffel">What kind of support helps here?</CharacterSays>
+          <CharacterSays id="dulcie">
+            {t("What kind of support would actually help?", "哪一種支援真的有幫助？")}
+          </CharacterSays>
           <div className="flex flex-wrap gap-2">
-            {SUPPORT.map((s) => {
-              const active = task.SupportRequested.includes(s);
-              return (
-                <Chip
-                  key={s}
-                  active={active}
-                  onClick={() => {
-                    const nextList = active
-                      ? task.SupportRequested.filter((x) => x !== s)
-                      : [...task.SupportRequested, s];
-                    requestSupport(task.TaskID, nextList);
-                    if (!active) toast("Asking for help is progress. +1 🍊");
-                  }}
-                >
-                  {s}
-                </Chip>
-              );
-            })}
+            {SUPPORT.map((type) => (
+              <Chip key={type} active={supportType === type} onClick={() => setSupportType(type)}>
+                {uiLabel(type, zh)}
+              </Chip>
+            ))}
           </div>
+          <select
+            className="h-11 w-full rounded-xl border bg-card px-3"
+            value={helper}
+            onChange={(event) => setHelper(event.target.value)}
+          >
+            <option value="">{t("No specific helper", "不指定幫手")}</option>
+            {helpers.map((user) => (
+              <option key={user.UserID} value={user.UserID}>
+                {user.DisplayName}
+              </option>
+            ))}
+          </select>
+          <Textarea
+            value={supportDetails}
+            onChange={(event) => setSupportDetails(event.target.value)}
+            placeholder={supportPlaceholder(supportType, t)}
+          />
+          {supportType === "Body doubling" ? (
+            <Input
+              type="datetime-local"
+              value={supportTime}
+              onChange={(event) => setSupportTime(event.target.value)}
+            />
+          ) : null}
+          <Button
+            className="w-full"
+            onClick={() => {
+              const result = requestSupport(
+                task.TaskID,
+                supportType,
+                helper || null,
+                supportDetails,
+                supportTime ? new Date(supportTime).toISOString() : null,
+              );
+              toast(
+                t(
+                  result.message,
+                  result.ok ? "支援請求已傳送。求助也是進展。+1 🍊" : "請加入支援詳情。",
+                ),
+              );
+              if (result.ok) setSupportDetails("");
+            }}
+          >
+            {t("Send support request", "傳送支援請求")}
+          </Button>
         </div>
       ) : null}
 
-      {tool === "bulu" ? (
+      {tool === "riedan" ? (
         <div className="mt-3 space-y-3 rounded-3xl bg-secondary/50 p-3">
-          <CharacterSays id="bulu">
-            Control Tower can nudge you inside the app. You choose how often.
+          <CharacterSays id="riedan">
+            {t(
+              "You choose whether this package allows reminders.",
+              "你可以決定此包裹是否允許提醒。",
+            )}
           </CharacterSays>
           <div className="flex flex-wrap gap-2">
             {(["None", "One reminder", "Every 3 days"] as ReminderPermission[]).map(
-              (r) => (
+              (permission) => (
                 <Chip
-                  key={r}
-                  active={task.ReminderPermission === r}
-                  onClick={() => updateTask(task.TaskID, { ReminderPermission: r })}
+                  key={permission}
+                  active={task.ReminderPermission === permission}
+                  onClick={() => updateTask(task.TaskID, { ReminderPermission: permission })}
                 >
-                  {r}
+                  {uiLabel(permission, zh)}
                 </Chip>
               ),
             )}
@@ -285,181 +491,235 @@ export function TaskCard({ task }: { task: Task }) {
         </div>
       ) : null}
 
-      {/* privacy + status */}
-      <details className="mt-4">
-        <summary className="cursor-pointer list-none rounded-2xl bg-secondary/60 p-3 text-sm font-semibold">
-          🔒 Privacy & status
-        </summary>
-        <div className="mt-3 space-y-3">
-          <div>
-            <p className="text-sm font-semibold">Who may access this package?</p>
-            <div className="mt-2 flex flex-wrap gap-2">
+      {context === "floor" ? (
+        <details className="mt-4">
+          <summary className="cursor-pointer list-none rounded-2xl bg-secondary/60 p-3 text-sm font-semibold">
+            🔒 {t("Privacy & status", "私隱及狀態")}
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="flex flex-wrap gap-2">
               {(["JUST ME", "MY CONNECTIONS", "SELECTED PEOPLE"] as Visibility[]).map(
-                (v) => (
+                (visibility) => (
                   <Chip
-                    key={v}
-                    active={task.Visibility === v}
-                    onClick={() => updateTask(task.TaskID, { Visibility: v })}
+                    key={visibility}
+                    active={task.Visibility === visibility}
+                    onClick={() => updateTask(task.TaskID, { Visibility: visibility })}
                   >
-                    {v}
+                    {uiLabel(visibility, zh)}
                   </Chip>
                 ),
               )}
             </div>
-          </div>
-          {task.Visibility === "SELECTED PEOPLE" ? (
-            <SelectedPeople task={task} />
-          ) : null}
-          <div>
-            <p className="text-sm font-semibold">How much detail do they get?</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(["FULL", "LOAD ONLY"] as DetailLevel[]).map((d) => (
-                <Chip
-                  key={d}
-                  active={task.DetailLevel === d}
-                  onClick={() => updateTask(task.TaskID, { DetailLevel: d })}
-                >
-                  {d}
-                </Chip>
-              ))}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              LOAD ONLY shows “Private background task” plus workload — no title,
-              no requester, no notes.
+            {task.Visibility === "SELECTED PEOPLE" ? <SelectedPeople task={task} /> : null}
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Status, load and priority are edited in the main task area.",
+                "狀態、負荷和優先次序請在任務主要區域調整。",
+              )}
             </p>
           </div>
-          <div>
-            <p className="text-sm font-semibold">Status</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {STATUSES.map((s) => (
-                <Chip
-                  key={s}
-                  active={task.Status === s}
-                  onClick={() => {
-                    if (s === "Done") {
-                      const { persimmons } = completeTask(task.TaskID);
-                      toast(`Shipment completed. Acceptable. +${persimmons} 🍊`);
-                    } else {
-                      updateTask(task.TaskID, { Status: s });
-                      if (s === "Blocked")
-                        toast("Marking a blocker honestly is progress.");
-                    }
-                  }}
-                >
-                  {s}
-                </Chip>
-              ))}
-            </div>
-          </div>
-          <Scale
-            label="Expected load"
-            hint="How expensive it feels, not how long it takes."
-            value={task.ExpectedLoad}
-            onChange={(v) => updateTask(task.TaskID, { ExpectedLoad: v })}
-          />
-          <Scale
-            label="Priority"
-            value={task.Priority}
-            onChange={(v) => updateTask(task.TaskID, { Priority: v })}
-          />
-          <label className="flex items-center justify-between rounded-2xl bg-secondary/60 p-3 text-sm font-semibold">
-            Goldie: this one is actually interesting
-            <Switch
-              checked={task.Interesting}
-              onCheckedChange={(v) => updateTask(task.TaskID, { Interesting: v })}
+        </details>
+      ) : null}
+
+      {context === "floor" && task.Status !== "Done" ? (
+        <div className="mt-4 rounded-2xl bg-secondary/50 p-3">
+          <label className="text-sm font-semibold">
+            {t("Progress", "進度")}：{progress}%
+            <input
+              className="mt-2 w-full accent-primary"
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={progress}
+              onChange={(event) =>
+                updateTask(task.TaskID, { ProgressOverride: Number(event.target.value) })
+              }
             />
           </label>
+          <Button
+            className="mt-3 w-full"
+            variant="secondary"
+            onClick={() => {
+              handoffSorting(
+                task.TaskID,
+                task.OwnerUser === me.UserID ? me.UserID : task.OwnerUser,
+              );
+              toast(t("Package returned to the Sorting Area.", "包裹已送回整理區。"));
+            }}
+          >
+            ← {t("Back to Sorting Area to edit details", "返回整理區修改資料")}
+          </Button>
         </div>
-      </details>
+      ) : null}
 
-      {task.Status !== "Done" ? (
-        <Button
-          className="mt-4 h-14 w-full rounded-2xl text-base"
-          onClick={() => {
-            const { persimmons } = completeTask(task.TaskID);
-            toast(`Shipment completed. Acceptable. +${persimmons} 🍊`);
-          }}
-        >
-          ✅ Ship this package
+      {context === "floor" && task.Status !== "Done" && !canRespond ? (
+        <Button className="mt-4 h-14 w-full rounded-2xl text-base" onClick={finish}>
+          ✅ {t("All set — mark this package shipped", "一切就緒－將此包裹標記為已出貨")}
         </Button>
       ) : null}
     </article>
   );
 }
 
-function SelectedPeople({ task }: { task: Task }) {
-  const { db } = usePF();
-  const viewers = db.connections.filter(
-    (c) => c.Active && c.OwnerUser === task.OwnerUser,
+function SimpleTaskCard({
+  task,
+  progress,
+  onUpdate,
+  onFinish,
+}: {
+  task: Task;
+  progress: number;
+  onUpdate: (patch: Partial<Task>) => void;
+  onFinish: () => void;
+}) {
+  const { db, me, handoffSorting } = usePF();
+  const { t, zh } = useI18n();
+  const projects = db.projects.filter(
+    (project) => project.OwnerUser === task.OwnerUser && !project.ArchivedAt,
   );
   return (
-    <div className="space-y-2">
-      {viewers.map((c) => {
-        const user = db.users.find((u) => u.UserID === c.ViewerUser)!;
-        const grant = db.access.find(
-          (a) => a.Task === task.TaskID && a.ViewerUser === user.UserID,
-        );
-        return (
-          <div
-            key={c.ConnectionID}
-            className="flex items-center justify-between rounded-2xl bg-card p-3 text-sm ring-1 ring-border"
+    <article className="rounded-2xl border bg-card p-4">
+      <Input
+        className="h-12 text-base font-semibold"
+        value={task.Title}
+        onChange={(event) => onUpdate({ Title: event.target.value })}
+        aria-label={t("Task title", "任務名稱")}
+      />
+      <Textarea
+        className="mt-2 min-h-20"
+        value={task.Description}
+        onChange={(event) => onUpdate({ Description: event.target.value })}
+        placeholder={t("Notes", "備註")}
+      />
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <label className="text-xs font-semibold">
+          {t("Project", "項目")}
+          <select
+            className="mt-1 h-11 w-full rounded-xl border bg-background px-3 text-sm"
+            value={task.ProjectID ?? ""}
+            onChange={(event) =>
+              onUpdate({ ProjectID: event.target.value || null, CategoryID: null })
+            }
           >
-            <span>
-              {user.DisplayName}{" "}
-              <span className="text-muted-foreground">({c.RelationshipLabel})</span>
-            </span>
-            <AccessToggle taskId={task.TaskID} viewerId={user.UserID} current={grant?.DetailLevel} />
-          </div>
-        );
-      })}
-    </div>
+            <option value="">{t("No project", "未加入項目")}</option>
+            {projects.map((project) => (
+              <option key={project.ProjectID} value={project.ProjectID}>
+                {project.Name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-semibold">
+          {t("Status", "狀態")}
+          <select
+            className="mt-1 h-11 w-full rounded-xl border bg-background px-3 text-sm"
+            value={task.Status}
+            onChange={(event) => onUpdate({ Status: event.target.value as Task["Status"] })}
+          >
+            {(["Sorted", "In Progress", "Blocked", "Waiting for Someone"] as const).map(
+              (status) => (
+                <option key={status} value={status}>
+                  {uiLabel(status, zh)}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+        <label className="text-xs font-semibold">
+          {t("Load", "負荷")}
+          <select
+            className="mt-1 h-11 w-full rounded-xl border bg-background px-3"
+            value={task.ExpectedLoad}
+            onChange={(event) => onUpdate({ ExpectedLoad: Number(event.target.value) })}
+          >
+            {[1, 2, 3, 4, 5].map((value) => (
+              <option key={value} value={value}>
+                {value}/5
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-semibold">
+          {t("Priority", "優先次序")}
+          <select
+            className="mt-1 h-11 w-full rounded-xl border bg-background px-3"
+            value={task.Priority}
+            onChange={(event) => onUpdate({ Priority: Number(event.target.value) })}
+          >
+            {[1, 2, 3, 4, 5].map((value) => (
+              <option key={value} value={value}>
+                {value}/5
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="mt-3 block text-xs font-semibold">
+        {t("Progress", "進度")}：{progress}%
+        <input
+          className="mt-2 w-full accent-primary"
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          value={progress}
+          onChange={(event) => onUpdate({ ProgressOverride: Number(event.target.value) })}
+        />
+      </label>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button
+          variant="secondary"
+          onClick={() =>
+            handoffSorting(task.TaskID, task.OwnerUser === me.UserID ? me.UserID : task.OwnerUser)
+          }
+        >
+          ← {t("Edit in Sorting", "返回整理")}
+        </Button>
+        <Button onClick={onFinish}>✅ {t("Done", "完成")}</Button>
+      </div>
+    </article>
   );
 }
 
-function AccessToggle({
-  taskId,
-  viewerId,
-  current,
-}: {
-  taskId: string;
-  viewerId: string;
-  current?: DetailLevel | undefined;
-}) {
-  const { db } = usePF();
-  // mutate through a tiny local helper on the db object via context updateTask is
-  // not suitable; use a dedicated event instead.
-  const set = (level: DetailLevel | null) => {
-    const raw = window.localStorage.getItem("epf.db.v1");
-    const parsed = raw ? JSON.parse(raw) : db;
-    const rest = parsed.access.filter(
-      (a: { Task: string; ViewerUser: string }) =>
-        !(a.Task === taskId && a.ViewerUser === viewerId),
-    );
-    parsed.access = level
-      ? [
-          ...rest,
-          {
-            AccessID: `ac_${Math.random().toString(36).slice(2, 8)}`,
-            Task: taskId,
-            ViewerUser: viewerId,
-            DetailLevel: level,
-          },
-        ]
-      : rest;
-    window.localStorage.setItem("epf.db.v1", JSON.stringify(parsed));
-    window.location.reload();
-  };
+function SelectedPeople({ task }: { task: Task }) {
+  const { db, setTaskAccess } = usePF();
+  const { t, zh } = useI18n();
   return (
-    <div className="flex gap-1">
-      <Chip active={!current} onClick={() => set(null)}>
-        No
-      </Chip>
-      <Chip active={current === "LOAD ONLY"} onClick={() => set("LOAD ONLY")}>
-        Load
-      </Chip>
-      <Chip active={current === "FULL"} onClick={() => set("FULL")}>
-        Full
-      </Chip>
+    <div className="space-y-2">
+      {db.connections
+        .filter((connection) => connection.Active && connection.OwnerUser === task.OwnerUser)
+        .map((connection) => {
+          const user = db.users.find((item) => item.UserID === connection.ViewerUser)!;
+          const current = db.access.find(
+            (grant) => grant.Task === task.TaskID && grant.ViewerUser === user.UserID,
+          )?.DetailLevel;
+          return (
+            <div
+              key={connection.ConnectionID}
+              className="flex items-center justify-between rounded-2xl bg-card p-3 text-sm ring-1 ring-border"
+            >
+              <span>{user.DisplayName}</span>
+              <div className="flex gap-1">
+                <Chip
+                  active={!current}
+                  onClick={() => setTaskAccess(task.TaskID, user.UserID, null)}
+                >
+                  {t("No", "否")}
+                </Chip>
+                {(["LOAD ONLY", "FULL"] as DetailLevel[]).map((level) => (
+                  <Chip
+                    key={level}
+                    active={current === level}
+                    onClick={() => setTaskAccess(task.TaskID, user.UserID, level)}
+                  >
+                    {uiLabel(level, zh)}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          );
+        })}
     </div>
   );
 }
@@ -471,16 +731,29 @@ function Field({
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
 }) {
   return (
     <label className="block">
       <span className="text-sm font-semibold">{label}</span>
       <Textarea
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         className="mt-1 min-h-20 rounded-2xl bg-card"
       />
     </label>
   );
+}
+
+function supportPlaceholder(type: SupportType, t: (english: string, chinese: string) => string) {
+  const prompts: Record<SupportType, [string, string]> = {
+    "Practical help": ["Describe the exact help needed", "描述需要的實際協助"],
+    "Body doubling": ["What will you work on together?", "你們會一起處理甚麼？"],
+    Encouragement: ["What would feel encouraging?", "怎樣的鼓勵會有幫助？"],
+    "Remind me": ["What should the reminder say?", "提醒應該說甚麼？"],
+    "Help me start": ["Write the first tiny action", "寫下第一個微小行動"],
+    "Just acknowledge me": ["What do you want witnessed?", "你想對方看見甚麼？"],
+    "Give me space": ["What should people pause?", "希望大家暫停甚麼？"],
+  };
+  return t(...prompts[type]);
 }
