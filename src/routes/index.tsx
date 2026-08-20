@@ -312,10 +312,37 @@ function LandingPatch() {
 }
 
 function HoldingNote({ note }: { note: { DumpID: string; Text: string } }) {
-  const { updateHoldingNote, archiveHoldingNote, convertHoldingNote } = usePF();
+  const { db, me, updateHoldingNote, archiveHoldingNote, convertHoldingNote } = usePF();
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(note.Text);
+  const [sorter, setSorter] = useState("");
+  const sorters = db.connections
+    .filter(
+      (connection) =>
+        connection.Active && connection.ViewerUser === me.UserID && connection.CanAssignTasks,
+    )
+    .map((connection) => db.users.find((user) => user.UserID === connection.OwnerUser))
+    .filter(Boolean);
+
+  function convert(asLines: boolean) {
+    if (editing) updateHoldingNote(note.DumpID, value);
+    const count = convertHoldingNote(note.DumpID, asLines, sorter || null);
+    if (count) {
+      const person = sorters.find((user) => user!.UserID === sorter);
+      toast(
+        person
+          ? t(
+              `${count} package${count === 1 ? "" : "s"} sent to ${person!.DisplayName} to sort.`,
+              `已把 ${count} 個包裹交給 ${person!.DisplayName} 整理。`,
+            )
+          : t(
+              `${count} package${count === 1 ? "" : "s"} moved to your Sorting Area.`,
+              `${count} 個包裹已移到你的整理區。`,
+            ),
+      );
+    }
+  }
   return (
     <article className="rounded-3xl bg-card p-3 ring-1 ring-border">
       {editing ? (
@@ -323,6 +350,27 @@ function HoldingNote({ note }: { note: { DumpID: string; Text: string } }) {
       ) : (
         <p className="whitespace-pre-wrap text-sm">{note.Text}</p>
       )}
+      <label className="mt-3 block text-sm font-semibold">
+        {t("Who should sort it after conversion?", "轉成包裹後，由誰整理？")}
+        <select
+          className="mt-1 h-11 w-full rounded-xl border bg-background px-3"
+          value={sorter}
+          onChange={(event) => setSorter(event.target.value)}
+        >
+          <option value="">{t("I will sort it", "由我整理")}</option>
+          {sorters.map((user) => (
+            <option key={user!.UserID} value={user!.UserID}>
+              {user!.DisplayName}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs font-normal text-muted-foreground">
+          {t(
+            "The note becomes one or more packages. You remain the owner; this only hands over sorting.",
+            "筆記會先轉成一個或多個包裹。你仍是包裹主人；這裡只會交由對方整理。",
+          )}
+        </span>
+      </label>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
           size="sm"
@@ -334,14 +382,10 @@ function HoldingNote({ note }: { note: { DumpID: string; Text: string } }) {
         >
           {editing ? t("Save", "儲存") : t("Edit", "編輯")}
         </Button>
-        <Button size="sm" variant="secondary" onClick={() => convertHoldingNote(note.DumpID, true)}>
+        <Button size="sm" variant="secondary" onClick={() => convert(true)}>
           {t("Split into packages", "拆成多個包裹")}
         </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => convertHoldingNote(note.DumpID, false)}
-        >
+        <Button size="sm" variant="secondary" onClick={() => convert(false)}>
           {t("Make one package", "轉為一個包裹")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => archiveHoldingNote(note.DumpID)}>

@@ -55,6 +55,7 @@ export function TaskCard({
   const {
     db,
     me,
+    setLayoutMode,
     updateTask,
     stepsOf,
     addStep,
@@ -126,6 +127,10 @@ export function TaskCard({
         progress={progress}
         onUpdate={(patch) => updateTask(task.TaskID, patch)}
         onFinish={finish}
+        onOpenTool={(nextTool) => {
+          setLayoutMode("character");
+          setTool(nextTool);
+        }}
       />
     );
   }
@@ -167,6 +172,8 @@ export function TaskCard({
           {t("Why it matters", "重要原因")}：“{task.WhyImportant}”
         </p>
       ) : null}
+
+      <SupportSummary taskId={task.TaskID} />
 
       {canRespond && assignment ? (
         <div className="mt-3 rounded-3xl bg-accent p-3 ring-1 ring-border">
@@ -228,28 +235,34 @@ export function TaskCard({
       ) : null}
 
       {context === "floor" ? (
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Chip active={tool === "break"} onClick={() => setTool(tool === "break" ? "" : "break")}>
-            <CharacterAvatar id="tottie" size="sm" /> {t("Break this down", "拆細處理")}
-          </Chip>
-          <Chip
-            active={tool === "spiral"}
-            onClick={() => setTool(tool === "spiral" ? "" : "spiral")}
-          >
-            <CharacterAvatar id="tottie" size="sm" /> {t("Stop spiralling", "停止鑽牛角尖")}
-          </Chip>
-          <Chip
-            active={tool === "support"}
-            onClick={() => setTool(tool === "support" ? "" : "support")}
-          >
-            <CharacterAvatar id="dulcie" size="sm" /> {t("Ground support", "安心支援")}
-          </Chip>
-          <Chip
-            active={tool === "riedan"}
-            onClick={() => setTool(tool === "riedan" ? "" : "riedan")}
-          >
-            <CharacterAvatar id="riedan" size="sm" /> 📣 {t("Reminders", "提醒")}
-          </Chip>
+        <div className="mt-4">
+          <p className="mb-2 text-sm font-semibold">{t("Toolkits", "工具箱")}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Chip
+              active={tool === "break"}
+              onClick={() => setTool(tool === "break" ? "" : "break")}
+            >
+              <CharacterAvatar id="tottie" size="sm" /> {t("Break this down", "拆細處理")}
+            </Chip>
+            <Chip
+              active={tool === "spiral"}
+              onClick={() => setTool(tool === "spiral" ? "" : "spiral")}
+            >
+              <CharacterAvatar id="tottie" size="sm" /> {t("Stop spiralling", "停止鑽牛角尖")}
+            </Chip>
+            <Chip
+              active={tool === "support"}
+              onClick={() => setTool(tool === "support" ? "" : "support")}
+            >
+              <CharacterAvatar id="dulcie" size="sm" /> {t("Ground support", "安心支援")}
+            </Chip>
+            <Chip
+              active={tool === "riedan"}
+              onClick={() => setTool(tool === "riedan" ? "" : "riedan")}
+            >
+              <CharacterAvatar id="riedan" size="sm" /> 📣 {t("Reminders", "提醒")}
+            </Chip>
+          </div>
         </div>
       ) : null}
 
@@ -567,11 +580,13 @@ function SimpleTaskCard({
   progress,
   onUpdate,
   onFinish,
+  onOpenTool,
 }: {
   task: Task;
   progress: number;
   onUpdate: (patch: Partial<Task>) => void;
   onFinish: () => void;
+  onOpenTool: (tool: "break" | "spiral" | "support" | "riedan") => void;
 }) {
   const { db, me, handoffSorting } = usePF();
   const { t, zh } = useI18n();
@@ -667,6 +682,30 @@ function SimpleTaskCard({
           onChange={(event) => onUpdate({ ProgressOverride: Number(event.target.value) })}
         />
       </label>
+      <SupportSummary taskId={task.TaskID} />
+      <div className="mt-3 rounded-2xl bg-secondary/50 p-3">
+        <p className="text-sm font-semibold">{t("Toolkits", "工具箱")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t(
+            "The simple editor stays available. Opening a guided tool temporarily shows its full panel.",
+            "簡潔編輯器會保留；開啟引導工具時，畫面會暫時顯示完整工具面板。",
+          )}
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Button variant="secondary" onClick={() => onOpenTool("break")}>
+            {t("Break this down", "拆細處理")}
+          </Button>
+          <Button variant="secondary" onClick={() => onOpenTool("spiral")}>
+            {t("Stop spiralling", "停止鑽牛角尖")}
+          </Button>
+          <Button variant="secondary" onClick={() => onOpenTool("support")}>
+            {t("Ground support", "安心支援")}
+          </Button>
+          <Button variant="secondary" onClick={() => onOpenTool("riedan")}>
+            📣 {t("Reminders", "提醒")}
+          </Button>
+        </div>
+      </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Button
           variant="secondary"
@@ -679,6 +718,39 @@ function SimpleTaskCard({
         <Button onClick={onFinish}>✅ {t("Done", "完成")}</Button>
       </div>
     </article>
+  );
+}
+
+function SupportSummary({ taskId }: { taskId: string }) {
+  const { db } = usePF();
+  const { t, zh } = useI18n();
+  const requests = db.supportRequests
+    .filter((request) => request.TaskID === taskId)
+    .sort((a, b) => b.CreatedAt.localeCompare(a.CreatedAt));
+  if (!requests.length) return null;
+  return (
+    <div className="mt-3 rounded-2xl border bg-accent/50 p-3">
+      <p className="text-sm font-semibold">{t("Support requested", "已提出的支援")}</p>
+      <ul className="mt-2 space-y-2">
+        {requests.map((request) => {
+          const helper = request.HelperUser
+            ? db.users.find((user) => user.UserID === request.HelperUser)
+            : null;
+          return (
+            <li key={request.SupportRequestID} className="rounded-xl bg-card p-2 text-xs">
+              <strong>{uiLabel(request.Type, zh)}</strong>
+              <span className="text-muted-foreground">
+                {helper
+                  ? ` · ${helper.DisplayName}`
+                  : ` · ${t("No specific helper", "不指定幫手")}`}
+                {` · ${uiLabel(request.Status, zh)}`}
+              </span>
+              <p className="mt-1">{request.Details}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

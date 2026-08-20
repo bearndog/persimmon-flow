@@ -65,8 +65,14 @@ function Harvest() {
       <div className="mt-4">
         <CharacterSays id="elster" tone="accent">
           {done.length
-            ? `Shipment completed. Acceptable. ${done.length} package${done.length === 1 ? "" : "s"} shipped so far.`
-            : "No shipments yet. The line is still warm."}
+            ? t(
+                `Shipment completed. Acceptable. ${done.length} package${done.length === 1 ? "" : "s"} shipped so far.`,
+                `出貨完成，做得不錯。目前共送出了 ${done.length} 個包裹。`,
+              )
+            : t(
+                "No shipments yet. The warehouse is ready when you are.",
+                "暫時未有包裹出貨。你準備好時，倉庫也已準備好。",
+              )}
         </CharacterSays>
       </div>
 
@@ -99,14 +105,19 @@ function Harvest() {
               key={p.user.UserID}
               onClick={() => {
                 if (balance < 1) {
-                  toast("Not enough persimmons yet.");
+                  toast(t("Not enough persimmons yet.", "目前沒有足夠的柿子。"));
                   return;
                 }
                 sendPersimmon(p.user.UserID, note);
-                toast(`Sent 1 🍊 to ${p.user.DisplayName}.`);
+                toast(
+                  t(
+                    `Sent 1 🍊 to ${p.user.DisplayName}.`,
+                    `已送出 1 🍊 給 ${p.user.DisplayName}。`,
+                  ),
+                );
               }}
             >
-              Send to {p.user.DisplayName}
+              {t("Send to", "送給")} {p.user.DisplayName}
             </Chip>
           ))}
         </div>
@@ -159,11 +170,11 @@ function Harvest() {
             className="flex items-center justify-between gap-3 rounded-2xl bg-card p-3 text-sm ring-1 ring-border"
           >
             <span className="min-w-0">
-              <span className="block truncate">{e.Reason}</span>
+              <span className="block truncate">{harvestReason(e.Reason, zh)}</span>
               <span className="text-xs text-muted-foreground">
                 {e.FromUser
                   ? db.users.find((u) => u.UserID === e.FromUser)?.DisplayName
-                  : "Factory"}
+                  : t("Warehouse", "倉庫")}
               </span>
             </span>
             <span className="font-bold">
@@ -188,11 +199,30 @@ function Harvest() {
           )
             return;
           reset();
-          toast(t("Demo factory reset.", "示範工廠已重設。"));
+          toast(t("Demo warehouse reset.", "示範倉庫已重設。"));
         }}
       >
         {t("Reset demo data", "重設示範資料")}
       </Button>
     </AppShell>
   );
+}
+
+function harvestReason(reason: string, zh: boolean) {
+  if (!zh) return reason;
+
+  const exact: Record<string, string> = {
+    "Starting week credit": "本週起始柿子",
+    "Asked for help — that is progress": "主動求助也是一種進展",
+    "Sent appreciation": "送出欣賞",
+    "Helped someone": "幫助了別人",
+    "Riedan ping": "阿笛提醒",
+  };
+
+  if (exact[reason]) return exact[reason];
+  if (reason.startsWith("Shipment completed:")) {
+    return `完成出貨：${reason.slice("Shipment completed:".length).trim()}`;
+  }
+
+  return reason;
 }

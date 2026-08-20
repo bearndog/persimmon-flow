@@ -349,7 +349,7 @@ interface Ctx {
   saveHoldingNote: (text: string) => string;
   updateHoldingNote: (id: string, text: string) => void;
   archiveHoldingNote: (id: string) => void;
-  convertHoldingNote: (id: string, asLines: boolean) => number;
+  convertHoldingNote: (id: string, asLines: boolean, sortingDelegate?: string | null) => number;
   updateTask: (id: string, patch: Partial<Task>) => void;
   completeTask: (id: string) => { persimmons: number };
   splitTask: (id: string, lines: string) => number;
@@ -587,37 +587,54 @@ export function PFProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const convertHoldingNote = useCallback<Ctx["convertHoldingNote"]>((id, asLines) => {
-    let count = 0;
-    setDb((current) => {
-      const dump = current.dumps.find((item) => item.DumpID === id);
-      if (!dump || dump.ArchivedAt) return current;
-      const titles = (asLines ? dump.Text.split("\n") : [dump.Text])
-        .map((line) => line.trim())
-        .filter(Boolean);
-      count = titles.length;
-      const tasks = titles.map((Title) => ({
-        ...taskDefaults(current.currentUserId),
-        TaskID: uid("t"),
-        Title,
-      }));
-      return {
-        ...current,
-        tasks: [...tasks, ...current.tasks],
-        dumps: current.dumps.map((item) =>
-          item.DumpID === id
-            ? {
-                ...item,
-                Kind: "converted" as const,
-                ResultTaskIDs: tasks.map((task) => task.TaskID),
-                UpdatedAt: now(),
-              }
-            : item,
-        ),
-      };
-    });
-    return count;
-  }, []);
+  const convertHoldingNote = useCallback<Ctx["convertHoldingNote"]>(
+    (id, asLines, sorter = null) => {
+      let count = 0;
+      setDb((current) => {
+        const dump = current.dumps.find((item) => item.DumpID === id);
+        if (!dump || dump.ArchivedAt) return current;
+        const titles = (asLines ? dump.Text.split("\n") : [dump.Text])
+          .map((line) => line.trim())
+          .filter(Boolean);
+        count = titles.length;
+        const tasks = titles.map((Title) => ({
+          ...taskDefaults(current.currentUserId),
+          TaskID: uid("t"),
+          Title,
+          SortingDelegateUser: sorter && sorter !== current.currentUserId ? sorter : null,
+        }));
+        return {
+          ...current,
+          tasks: [...tasks, ...current.tasks],
+          notifications:
+            sorter && sorter !== current.currentUserId
+              ? [
+                  notify(
+                    sorter,
+                    "sorting_handoff",
+                    `${titles.length} package${titles.length === 1 ? "" : "s"} converted from a holding note need sorting.`,
+                    current.currentUserId,
+                    { TaskID: tasks[0]?.TaskID ?? null },
+                  ),
+                  ...current.notifications,
+                ]
+              : current.notifications,
+          dumps: current.dumps.map((item) =>
+            item.DumpID === id
+              ? {
+                  ...item,
+                  Kind: "converted" as const,
+                  ResultTaskIDs: tasks.map((task) => task.TaskID),
+                  UpdatedAt: now(),
+                }
+              : item,
+          ),
+        };
+      });
+      return count;
+    },
+    [],
+  );
 
   const updateTask = useCallback<Ctx["updateTask"]>((id, patch) => {
     setDb((current) => ({
@@ -1307,7 +1324,7 @@ export function PFProvider({ children }: { children: ReactNode }) {
           notify(
             request.RequesterUser,
             "support_response",
-            `${task?.Title ?? "Package"}: support ${status}.`,
+            `${task?.Title ?? "Package"}: ${request.Type} support ${status}.`,
             current.currentUserId,
             { TaskID: request.TaskID, SupportRequestID: id },
           ),

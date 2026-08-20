@@ -18,18 +18,12 @@ export function useI18n() {
 
 export function moodLabel(mood: string, zh: boolean) {
   const labels: Record<string, [string, string]> = {
-    "Neuna / overwhelmed": [
-      "Falco — carrying pain or overwhelmed",
-      "Falco 隼隼－感到難受或負荷過重",
-    ],
-    "Teddi / exhausted": [
-      "Dulcie — needs comfort or low energy",
-      "Dulcie 朵詩－需要安慰或能量偏低",
-    ],
-    "Elster / focused": ["Elster — quietly focused", "Elster 依斯特－安靜專注"],
-    "Goldie / energetic": ["Goldie — playful and curious", "Goldie 小今－想玩、想探索"],
-    "Tottie / boundaries": ["Tottie — needs clearer boundaries", "Tottie 托蒂－需要理清界線"],
-    Fine: ["Riedan — steady and connected", "Riedan 阿笛－狀態平穩、想與人連結"],
+    "Neuna / overwhelmed": ["Falco — carrying pain or overwhelmed", "隼隼－感到難受或負荷過重"],
+    "Teddi / exhausted": ["Dulcie — needs comfort or low energy", "朵詩－需要安慰或能量偏低"],
+    "Elster / focused": ["Elster — quietly focused", "依斯特－安靜專注"],
+    "Goldie / energetic": ["Goldie — playful and curious", "小今－想玩、想探索"],
+    "Tottie / boundaries": ["Tottie — needs clearer boundaries", "托蒂－需要理清界線"],
+    Fine: ["Riedan — steady and connected", "阿笛－狀態平穩、想與人連結"],
   };
   return labels[mood]?.[zh ? 1 : 0] ?? mood;
 }
@@ -76,6 +70,8 @@ export function uiLabel(value: string, zh: boolean) {
     accepted: "已接受",
     rejected: "已拒絕",
     completed: "已完成",
+    open: "等待回覆",
+    resolved: "已解決",
     "Practical help": "實際協助",
     "Body doubling": "陪伴開工",
     Encouragement: "鼓勵",

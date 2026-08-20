@@ -210,7 +210,7 @@ function notificationMessage(item: ActivityNotification, db: DB, zh: boolean) {
     case "support_requested":
       return `${title}：${uiLabel(support?.Type ?? "", true)}－${support?.Details ?? ""}`;
     case "support_response":
-      return `${title}：支援請求${support?.Status === "resolved" ? "已解決" : "已接受"}。`;
+      return `${title}：${uiLabel(support?.Type ?? "支援", true)}${support?.Status === "resolved" ? "已解決" : "已接受"}。`;
     case "mood_check_in":
       return `${actor?.DisplayName ?? "有人"} 登記為 ${moodLabel(actor?.CurrentMood ?? "Fine", true)}，負荷 ${actor?.CurrentLoad ?? "自動"}/5${actor?.HelpNeeded ? "，並需要協助" : ""}。`;
     case "task_completed":

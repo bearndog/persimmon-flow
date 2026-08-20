@@ -12,11 +12,11 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { CharacterAvatar } from "./Character";
+import { CharacterAvatar, characterName } from "./Character";
 
 export function CharacterWorkshop() {
   const { db, setCharacterImage } = usePF();
-  const { t } = useI18n();
+  const { t, zh } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);
 
   function loadFile(characterId: string, file?: File) {
@@ -74,8 +74,10 @@ export function CharacterWorkshop() {
             >
               <CharacterAvatar id={character.CharacterID} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold">{character.DisplayName}</p>
-                <p className="text-xs font-medium text-foreground/80">{character.Nickname}</p>
+                <p className="truncate font-semibold">{characterName(character, zh)}</p>
+                <p className="text-xs font-medium text-foreground/80">
+                  {character.Nickname.split(" · ")[zh ? 1 : 0] ?? character.Nickname}
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {character.Image !== character.DefaultImage
                     ? t("Custom drawing", "自訂繪圖")

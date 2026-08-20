@@ -181,7 +181,17 @@ function SortingLine() {
                   )
                 : t("Package being organised", "正在整理的包裹")}
             </p>
-            <h2 className="font-display text-2xl font-bold leading-snug">{task.Title}</h2>
+            <label className="mt-2 block">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {t("Package title", "包裹名稱")}
+              </span>
+              <Input
+                className="mt-1 h-12 rounded-2xl font-display text-xl font-bold"
+                value={task.Title}
+                onChange={(event) => updateTask(task.TaskID, { Title: event.target.value })}
+                aria-label={t("Package title", "包裹名稱")}
+              />
+            </label>
 
             <div className="mt-5 space-y-5">
               <div>
